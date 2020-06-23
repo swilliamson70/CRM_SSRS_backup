@@ -1,7 +1,7 @@
 ﻿/* Reto Egeter, fullparam.wordpress.com */
 
 DECLARE	@SearchStrTableName nvarchar(255), @SearchStrColumnName nvarchar(255), @SearchStrColumnValue nvarchar(255), @SearchStrInXML bit, @FullRowResult bit, @FullRowResultRows int
-SET @SearchStrColumnValue = '%29C69522-08C1-48E3-A030-F417A0E741%' /* use LIKE syntax */
+SET @SearchStrColumnValue = '%9B3592D4-249A-474A-AE24-328CAE05B127%' /* use LIKE syntax */
 SET @FullRowResult = 1
 SET @FullRowResultRows = 3
 SET @SearchStrTableName = NULL /* NULL for all tables, uses LIKE syntax */

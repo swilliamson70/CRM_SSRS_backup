@@ -1,4 +1,6 @@
-﻿ select * from elcn_constituenttypebase
+﻿ select * from stringmapbase;
+ 
+ select * from elcn_constituenttypebase
 
  select * from entity where name like 'elcn%' order by name 
 
@@ -323,4 +325,71 @@ with w_get_consec_years as (
 select * from w_get_consec_years 
 --where personid = 'E9397505-12EC-42DD-94D3-DC5F3E089E80'
 where consecyears > 1
-order by personid, givingyear desc
+order by personid, givingyear desc;
+
+
+select * from elcn_contactpreferencebase cpb
+where statuscode = 1
+--and cpb.elcn_ContactRestrictionId <> '8872A718-5472-40C4-82C7-DB72FC4CE5A6' /*Exclude*/
+AND cpb.elcn_ContactPreferenceStatusId = '378DE114-EB09-E511-943C-0050568068B7' /*Current*/
+
+;
+
+	(CASE WHEN(
+		SELECT COUNT(*) FROM elcn_contactpreferenceBase cpb
+		WHERE cpb.elcn_ContactPreferenceTypeId = 'e4e02dc6-3314-e511-9431-005056804b43' /*Solicitations*/
+		AND cpb.elcn_ContactRestrictionId = '8872A718-5472-40C4-82C7-DB72FC4CE5A6' /*Exclude*/
+		AND (cpb.elcn_RestrictionLiftDate < CURRENT_TIMESTAMP OR cpb.elcn_RestrictionLiftDate IS NULL)
+		AND cpb.elcn_ContactPreferenceStatusId = '378DE114-EB09-E511-943C-0050568068B7' /*Current*/
+		AND cpb.elcn_MethodofContact = 344220006 /*All*/
+		AND cpb.elcn_personId = cb.ContactId
+		) > 0 THEN 'NTP' ELSE NULL END) AS NTP,
+
+
+-->> MAIL CODES
+select * from elcn_communicationlistmemberBase
+join contactbase
+on elcn_communicationlistmemberBase.elcn_contact = contactbase.contactid
+where elcn_CommunicationListID = '20271E62-5741-EA11-80D9-0A253F89019C'
+and lastname = 'Foreman';
+
+select * from elcn_communicationlistBase -- elcn_name = Presidents Christmas Card List_P elcn_communicationslistid = 20271E62-5741-EA11-80D9-0A253F89019C
+
+-->> Membership name,status,number,exp date, won_x fields, fan_x fields 
+/*--CRM Constituents > People > R Ford - Related Date > Memberships
+-- name = 7701 - Raymond Ford
+-- Membership level (Membership) = ALUM - NSU Alumni Association - Life SInge Membership
+-- Membership Status (Membership) = Current
+-- Start Date 11/8/2000
+-- Expire Date = null
+-- Dues 0
+-- Outstanding Balance 0
+-- ...
+
+*/
+select * from elcn_membershipbase 
+	--elcn_membershipid, 
+	--elcn_membershiplevelid, 9B3592D4-249A-474A-AE24-328CAE05B127 -- membership program level base
+	--elcn_membershipprogramid, 7B18FD29-B194-454E-B08C-8BEF85103417
+	--elcn_membershipstatusid, 378DE114-EB09-E511-943C-0050568068B7
+	--elcn_primaryMemberPersonId = contactid
+where elcn_PrimaryMemberPersonId = 'E9397505-12EC-42DD-94D3-DC5F3E089E80'
+
+select * from elcn_membershipmemberBase;
+/* contains:
+elcn_PersonId
+elcn_MembershipId
+
+
+;
+select * from elcn_membershipprogramlevelBase;--where elcn_membershipprogramlevelid = '9B3592D4-249A-474A-AE24-328CAE05B127';
+-- contains elcn_name 'ALUMN - NSU Alumni Association - Life Single Membership'
+-- elcn_leveltype = 184AB2B6-5E0A-4999-AAA8-84679BCCF1C0
+-- elcn_membershipprogram = 7B18FD29-B194-454E-B08C-8BEF85103417
+
+select * from elcn_membershipleveldesignationbase;
+--elcn_name	elcn_Designation	elcn_MembershipLevelAllocation	elcn_MembershipProgramLevel
+--WON - Women of Northeastern - Recent Grad Women of Northeast - General Fund	2DB0E898-CF43-4F62-86CA-41B47B8642F8	100	14E51B3A-3396-4851-8644-5018A188C748
+
+
+select * from elcn_membershipprogramleveltype where elcn_membershipprogramleveltypeId = '9B3592D4-249A-474A-AE24-328CAE05B127'
