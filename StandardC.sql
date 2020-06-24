@@ -1,5 +1,5 @@
 ﻿/*
-IF OBJECT_ID('tempdb..#temp_membership') IS NOT NULL DROP TABLE #temp_membership
+IF OBJECT_ID('tempdb..#temp_email_slot') IS NOT NULL DROP TABLE #temp_email_slot
 GO
 
 SELECT
@@ -125,6 +125,76 @@ FROM
 ;
 CREATE NONCLUSTERED INDEX INDX_TMP_ID_MEMBERSHIP ON #temp_membership (elcn_primarymemberpersonid);
 
+SELECT  
+	elcn_personid,
+	Preferred,
+	Business,
+	Personal,
+	Other,
+	Yellow,
+	Alumni,
+	NSU
+INTO 
+	#temp_email_slot
+FROM(
+	SELECT
+		case elcn_typeid
+			WHEN 'CC0141A1-A383-E911-80D7-0A253F89019C' THEN 'Business'
+			WHEN 'CD0141A1-A383-E911-80D7-0A253F89019C' THEN 'Personal'
+			WHEN '31292157-E075-4E85-9204-1CCEDEC9DBF9'	THEN 'Other'
+			WHEN 'F523FC9B-5370-46F3-9242-263411E73043' THEN 'Yellow ' -- Waiting Authorization
+			WHEN 'A4B7A0CC-0DFF-4069-8337-6571B94CA5BD'	THEN 'Alumni'
+			WHEN '26E175F1-4286-4B7E-9CE9-F2E383D58EFD'	THEN 'NSU'
+			ELSE 'Unknown'
+		END AS emailtype,
+		elcn_personid,
+		elcn_email
+	FROM
+		elcn_emailaddressbase
+	WHERE
+		statuscode = 1
+		AND	elcn_EmailAddressStatusId = '378DE114-EB09-E511-943C-0050568068B7' -- current
+										-- 050FE7CB-5508-E511-943C-0050568068B7 -- past
+	UNION ALL 
+	SELECT
+		'Preferred',
+		elcn_personid,
+		elcn_email
+	FROM
+		elcn_emailaddressbase
+	WHERE
+		statuscode =1 
+		AND	elcn_EmailAddressStatusId = '378DE114-EB09-E511-943C-0050568068B7' -- current
+										-- 050FE7CB-5508-E511-943C-0050568068B7 -- past
+		AND elcn_preferred = 1
+
+)T PIVOT 
+(	MAX(elcn_email)
+	FOR emailtype 
+	IN ([Preferred], [Business], [Personal], [Other], [Yellow], [Alumni], [NSU])
+)PVT;
+
+CREATE NONCLUSTERED INDEX INDX_TMP_ID ON #temp_email_slot (elcn_personid);
+
+
+-->> Phone
+SELECT
+	elcn_personid, --guid 
+	elcn_phonenumber, --phone number
+	--elcn_PhoneStatusId, --378DE114-EB09-E511-943C-0050568068B7
+	--elcn_phonetype, --CE0141A1-A383-E911-80D7-0A253F89019C
+	elcn_phonetypebase.elcn_type ,
+	elcn_preferred -- 0/1
+INTO #temp_phone
+FROM
+	elcn_phonebase
+	JOIN elcn_phonetypebase
+		ON elcn_phonebase.elcn_phonetype = elcn_phonetypebase.elcn_phonetypeid  
+		AND elcn_phonebase.elcn_phonestatusid = '378DE114-EB09-E511-943C-0050568068B7' -- Current
+		AND elcn_phonebase.statuscode = 1
+; 
+
+CREATE NONCLUSTERED INDEX INDX_TMP_ID ON #temp_phone (elcn_personid);
 */--
 --------------T O P 
 --
@@ -483,17 +553,28 @@ SELECT
 	fan_membership.elcn_expiredate FAN_EXPIRATION_DATE,
 
 	eab.elcn_name EMAIL_PREFERRED_ADDRESS,
+	email_slot.personal PERS_EMAIL,
+	email_slot.nsu NSU_EMAIL,
+	email_slot.alumni AL_EMAIL,
+	email_slot.business BUS_EMAIL,
+
+
+	homephone.elcn_phonenumber Home_Phome, --PR_PHONE_NUMBER
+	CASE homephone.elcn_preferred
+		WHEN 1 then 'Y'
+		ELSE null
+	END Home_Phone_Preferred, --PR_PRIMARY_IND
+	cellphone.elcn_phonenumber CL_PHONE_NUMBER,
+	CASE cellphone.elcn_preferred 
+		WHEN 1 then 'Y' 
+		ELSE null
+	END Cell_Preferred, --CL_PRIMARY_IND
+	busphone.elcn_phonenumber Business_Phone, --B1_PHONE_NUMBER
+	CASE busphone.elcn_preferred
+		WHEN 1 then 'Y'
+		ELSE null
+	END Business_Phone_Preferred, --B1_PRIMARY_IND
 /*
-PERS_EMAIL
-NSU_EMAIL
-AL_EMAIL
-BUS_EMAIL
-PR_PHONE_NUMBER
-PR_PRIMARY_IND
-CL_PHONE_NUMBER
-CL_PRIMARY_IND
-B1_PHONE_NUMBER
-B1_PRIMARY_IND
 
 
 *******************/
@@ -529,18 +610,29 @@ B1_PRIMARY_IND
 			elcn_contributiondonorBase.elcn_person = cb.ContactId
 			AND elcn_contributionBase.statuscode = 1
 			AND elcn_contribution.elcn_contributionType = 344220003 -- Pledge Payment
+			AND elcn_contributiondonorBase.elcn_AssociationTypeId = '36FA0E30-6248-E411-941F-0050568068B8' -- Primary only, If incl Spouse, would need to include Group/Joint
+	) Lifetime_Pledge_Payments, --Total Pledge Payments
+	
+	(
+		SELECT
+			SUM(elcn_contributionBase.elcn_Amount)
+		FROM
+			elcn_contribution --PAYMENT
+			JOIN elcn_contributiondonorBase 
+				ON elcn_contribution.elcn_contributionId = elcn_contributiondonorBase.elcn_contribution
+			JOIN elcn_contributionBase --PLEDGE
+				ON elcn_contribution.elcn_PaymentforContribution = elcn_contributionBase.elcn_contributionId
+		WHERE
+			elcn_contributiondonorBase.elcn_person = cb.ContactId
+			AND elcn_contributionBase.statuscode = 1
+			AND elcn_contribution.elcn_contributionType = 344220003 -- Pledge Payment
 			--AND elcn_contributiondonorBase.elcn_ContributionDate BETWEEN @p_StartDate AND @p_EndDate
 			AND elcn_contributiondonorBase.elcn_AssociationTypeId = '36FA0E30-6248-E411-941F-0050568068B8' -- Primary only, If incl Spouse, would need to include Group/Joint
 	) Total_Pledge_Payments, --Total Pledge Payments
 
 
 -- LIFE_TOTAL_GIVING
-	cb.elcn_totalGiving Total_Lifetime_Giving,
-
--- LIFE_TOTAL_GIVING_AUX -- total of fair market value of all contributions except dues payments
-
--- FISCAL_YEAR1
-
+	cb.elcn_totalGiving Lifetime_Giving,
 -- TOTAL_GIVING1
 	( 
 		SELECT
@@ -557,7 +649,60 @@ B1_PRIMARY_IND
 															344220004, -- Matching Gift
 															344220005) -- Bequest Expectancy
 			--and elcn_contributiondonorBase.elcn_ContributionDate BETWEEN @p_StartDate AND @p_EndDate
-	) Total_Giving_For_Period,
+	) Total_Giving,
+
+		(
+		SELECT
+			SUM(elcn_contribution.elcn_TotalPremiumFairMarketValue)
+		FROM
+			elcn_contributiondonorBase
+			JOIN elcn_contribution  
+				ON elcn_contributiondonorBase.elcn_contribution = elcn_contribution.elcn_contributionId
+		WHERE
+			elcn_contributiondonorbase.elcn_person = cb.ContactId
+			AND elcn_contribution.statuscode = 1
+			AND elcn_contribution.elcn_contributionType IN (344220000, -- Gift
+															344220001, -- Pledge
+															344220004, -- Matching Gift
+															344220005) -- Bequest Expectancy
+	) Lifetime_Premiums,
+
+-- LIFE_TOTAL_GIVING_AUX -- total of fair market value of all contributions except dues payments
+	(
+		SELECT
+			SUM(elcn_contribution.elcn_TotalPremiumFairMarketValue)
+		FROM
+			elcn_contributiondonorBase
+			JOIN elcn_contribution  
+				ON elcn_contributiondonorBase.elcn_contribution = elcn_contribution.elcn_contributionId
+		WHERE
+			elcn_contributiondonorbase.elcn_person = cb.ContactId
+			AND elcn_contribution.statuscode = 1
+			AND elcn_contribution.elcn_contributionType IN (344220000, -- Gift
+															344220001, -- Pledge
+															344220004, -- Matching Gift
+															344220005) -- Bequest Expectancy
+			--and elcn_contributiondonorBase.elcn_ContributionDate BETWEEN @p_StartDate AND @p_EndDate
+	) Total_Premiums,
+
+-- FISCAL_YEAR1 -- do not use
+
+	(
+		SELECT
+			SUM(elcn_contribution.elcn_marketValue)
+		FROM
+			elcn_contributiondonorBase
+			JOIN elcn_contribution  
+				ON elcn_contributiondonorBase.elcn_contribution = elcn_contribution.elcn_contributionId
+		WHERE
+			elcn_contributiondonorBase.elcn_person = cb.ContactId
+			AND elcn_contribution.statuscode = 1
+			AND elcn_contribution.elcn_contributionType IN (344220000, -- Gift
+															344220001, -- Pledge
+															344220004, -- Matching Gift
+															344220005) -- Bequest Expectancy
+			
+	) Lifetime_Fair_Market_Value,--Total Lifetime Fair Market Value
 
 	(
 		SELECT
@@ -576,52 +721,42 @@ B1_PRIMARY_IND
 			--and elcn_contributiondonorBase.elcn_ContributionDate BETWEEN @p_StartDate AND @p_EndDate
 	) Total_Fair_Market_Value, --Total Fair Market Value (For given date range)
 
-	(
-		SELECT
-			SUM(elcn_contribution.elcn_marketValue)
-		FROM
-			elcn_contributiondonorBase
-			JOIN elcn_contribution  
-				ON elcn_contributiondonorBase.elcn_contribution = elcn_contribution.elcn_contributionId
-		WHERE
-			elcn_contributiondonorBase.elcn_person = cb.ContactId
-			AND elcn_contribution.statuscode = 1
-			AND elcn_contribution.elcn_contributionType IN (344220000, -- Gift
-															344220001, -- Pledge
-															344220004, -- Matching Gift
-															344220005) -- Bequest Expectancy
-			
-	) Total_Lifetime_Fair_Market_Value,--Total Lifetime Fair Market Value
+
 /**************************
 ANNUAL_HOUSEHOLD_GIVING -- Householding tools in CRM 3.0
 LIFETIME_HOUSEHOLD_GIVING -- Householding tools in CRM 3.0
 **************************/
 
-/*
+--RELATION_SOURCE - not needed
+--RELATION_SOURCE_DESC
+	relationship.elcn_type	Relationship,
+	relationship.fullname Relation_Name,
 
-RELATION_SOURCE
-RELATION_SOURCE_DESC
-COMBINED_MAILING_PRIORITY
-COMBINED_MAILING_PRIORITY_DESC
-HOUSEHOLD_IND
-DATE_RANGE_TOTAL_GIVING
-DATE_RANGE_TOTAL_AUX_AMT
+--COMBINED_MAILING_PRIORITY
+	CASE relationship.elcn_jointmailing 
+		WHEN 1 THEN 'Y'
+		ELSE null
+	END Joint_Mailing,
+--COMBINED_MAILING_PRIORITY_DESC - not needed
+--HOUSEHOLD_IND - not mapped from Banner to CRM
 
-*/
-	edu_1.Degree Degree, --DEGREE_1
-	edu_1.Degree_Name AS Degree1_Degree,--DEGREE_DESC_1
+--DATE_RANGE_TOTAL_GIVING -- financials grouped above
+--DATE_RANGE_TOTAL_AUX_AMT -- financials grouped above
+
+	edu_1.Degree Degree1_Degree, --DEGREE_1
+	edu_1.Degree_Name AS Degree1_Degree_Desc,--DEGREE_DESC_1
 	--MAJOR_1 -- program codes are not mapped from APRAMAJ
 	edu_1.Major AS Degree1_Major, --MAJOR_DESC_1
 	edu_1.Degree_Year Degree1_Degree_Year, --DEGREE_YEAR_1
 
-	edu_2.Degree Degree, --DEGREE_2
-	edu_2.Degree_Name AS Degree2_Degree,--DEGREE_DESC_2
+	edu_2.Degree Degree2_Degree, --DEGREE_2
+	edu_2.Degree_Name AS Degree2_Degree_Desc,--DEGREE_DESC_2
 --MAJOR_2
 	edu_2.Major AS Degree2_Major,--MAJOR_DESC_2
 	edu_2.Degree_Year Degree2_Degree_Year, --DEGREE_YEAR_2
 
-	edu_3.Degree Degree,--DEGREE_3
-	edu_3.Degree_Name AS Degree3_Degree,--DEGREE_DESC_3
+	edu_3.Degree Degree3_Degree,--DEGREE_3
+	edu_3.Degree_Name AS Degree3_Degree_Desc,--DEGREE_DESC_3
 --MAJOR_3
 	edu_3.Major AS Degree3_Major,--MAJOR_DESC_3
 	edu_3.Degree_Year Degree3_Degree_Year --DEGREE_YEAR_3
@@ -872,10 +1007,65 @@ LEFT OUTER JOIN #temp_education edu_3 on edu_3.elcn_PersonId = cb.ContactID and 
 		ON eab.elcn_personid = cb.contactid 
 		AND eab.elcn_preferred = 1
 
+	LEFT JOIN #temp_email_slot email_slot
+		ON cb.contactid = email_slot.elcn_personid
+
+	LEFT JOIN(
+		SELECT
+			elcn_personid, --guid 
+			elcn_phonenumber, --phone number
+			elcn_type , -- 'Home' etc
+			elcn_preferred -- 0/1
+		FROM
+			#temp_phone
+		WHERE
+			elcn_type = 'Home'
+		)HOMEPHONE ON cb.contactid = homephone.elcn_personid
+
+	LEFT JOIN(
+		SELECT
+			elcn_personid, --guid 
+			elcn_phonenumber, --phone number
+			elcn_type , -- 'Home' etc
+			elcn_preferred -- 0/1
+		FROM
+			#temp_phone
+		WHERE
+			elcn_type = 'Cell'
+		)CELLPHONE ON cb.contactid = cellphone.elcn_personid
+
+	LEFT JOIN(
+		SELECT
+			elcn_personid, --guid 
+			elcn_phonenumber, --phone number
+			elcn_type , -- 'Home' etc
+			elcn_preferred -- 0/1
+		FROM
+			#temp_phone
+		WHERE
+			elcn_type = 'Business'
+		)BUSPHONE ON cb.contactid = busphone.elcn_personid
+
+	LEFT JOIN(
+		SELECT
+			prb.elcn_person1id,
+			prt.elcn_type,
+			contactbase.fullname,
+			elcn_JointMailing
+			
+		FROM
+			elcn_personalrelationshipBase prb
+			LEFT JOIN elcn_personalrelationshiptype prt on elcn_RelationshipType1Id  = elcn_personalrelationshiptypeid 
+			LEFT JOIN contactbase on prb.elcn_person2id = contactbase.contactid
+		WHERE
+			prb.statuscode = 1
+	)RELATIONSHIP ON cb.contactid = relationship.elcn_person1id
+
+			
 WHERE
 cb.statuscode =1
 --and cb.fullname like 'Robert C Sanders'
 and cb.datatel_EnterpriseSystemId in ( 'N00156288', 'N00142649') --'N00018518'
 --EF350F86-1561-47D1-85ED-FC295CBDD9C5
 ;
---select * from #temp_membership where elcn_primarymemberpersonid = 'E9397505-12EC-42DD-94D3-DC5F3E089E80';
+--select * from #temp_email_slot where elcn_personid = 'E9397505-12EC-42DD-94D3-DC5F3E089E80';

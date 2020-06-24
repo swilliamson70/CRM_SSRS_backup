@@ -481,32 +481,214 @@ FROM(
 	([Value], [Level], [Score]) 
 ) PVT
 ;
-select * 
+
+
+select  
+	elcn_personid,
+	Preferred,
+	Business,
+	Personal,
+	Other,
+	Yellow,
+	Alumni,
+	NSU
+
 FROM(
 	SELECT
-		elcn_typeid,
+		--elcn_typeid,
 		case elcn_typeid
 			WHEN 'CC0141A1-A383-E911-80D7-0A253F89019C' THEN 'Business'
-			WHEN 'CC0141A1-A383-E911-80D7-0A253F89019C' THEN 'Personal'
+			WHEN 'CD0141A1-A383-E911-80D7-0A253F89019C' THEN 'Personal'
 			WHEN '31292157-E075-4E85-9204-1CCEDEC9DBF9'	THEN 'Other'
 			WHEN 'F523FC9B-5370-46F3-9242-263411E73043' THEN 'Yellow ' -- Waiting Authorization
 			WHEN 'A4B7A0CC-0DFF-4069-8337-6571B94CA5BD'	THEN 'Alumni'
 			WHEN '26E175F1-4286-4B7E-9CE9-F2E383D58EFD'	THEN 'NSU'
 			ELSE 'Unknown'
 		END AS emailtype,
-
 		elcn_personid,
-		elcn_preferred,
 		elcn_email
 	FROM
 		elcn_emailaddressbase
 	WHERE
 		statuscode = 1
+	UNION ALL 
+	SELECT
+		'Preferred',
+		elcn_personid,
+		elcn_email
+	FROM
+		elcn_emailaddressbase
+	WHERE
+		statuscode =1 
+		AND elcn_preferred = 1
+
 )T PIVOT 
 (	MAX(elcn_email)
 	FOR emailtype 
-	IN ([Business],
+	IN ([Preferred], [Business], [Personal], [Other], [Yellow], [Alumni], [NSU])
+)PVT
+
+--->> TELEPHONE
+
+select * from elcn_phonebase;
+SELECT
+elcn_personid, --guid 
+elcn_phonenumber, --phone number
+--elcn_PhoneStatusId, --378DE114-EB09-E511-943C-0050568068B7
+--elcn_phonetype, --CE0141A1-A383-E911-80D7-0A253F89019C
+elcn_phonetypebase.elcn_type ,
+elcn_preferred -- 0/1
+from elcn_phonebase
+join elcn_phonetypebase
+	on elcn_phonebase.elcn_phonetype = elcn_phonetypebase.elcn_phonetypeid  
+where elcn_personid = 'E9397505-12EC-42DD-94D3-DC5F3E089E80' and
+ --elcn_phonetypeid = '5613F262-9B96-48EC-A58E-97E7C333C46F' and
+ elcn_phonebase.statuscode = 1
+ and elcn_phonestatusid = '378DE114-EB09-E511-943C-0050568068B7' -- Current
+;
+select elcn_phonetypeid, elcn_type from elcn_phonetypebase
+where elcn_phonetypeid = 'CE0141A1-A383-E911-80D7-0A253F89019C'; --elcn_type = 'Home'
+/*
+CE0141A1-A383-E911-80D7-0A253F89019C	Home PR?
+CF0141A1-A383-E911-80D7-0A253F89019C	Business B1
+D00141A1-A383-E911-80D7-0A253F89019C	Seasonal
+D10141A1-A383-E911-80D7-0A253F89019C	Mobile
+D20141A1-A383-E911-80D7-0A253F89019C	Personal Fax
+D30141A1-A383-E911-80D7-0A253F89019C	Business Fax
+D40141A1-A383-E911-80D7-0A253F89019C	Unknown
+713162A7-F7EB-49E9-99D9-33602354A5AE	Cell CL
+79AA3970-32B1-4887-AA07-49668AA3F433	Business 2
+5613F262-9B96-48EC-A58E-97E7C333C46F	Current 
+A8A03280-5DEF-4F90-90E2-B75D8635F289	Yellow - Waiting Authorization
+
+STVTELE: 
+PR	Permanent
+EC	Emergency Contact
+YW	Yellow - Waiting Authorization
+B1	Business 1
+B2	Business 2
+CB	Campus Broken Arrow
+CL	Cell
+CM	Campus Muskogee
+CT	Campus Tahlequah
+CU	Current
+P1	Parent 1
+P2	Parent 2
+SE	Seasonal
+FX	Fax
+FAX	Fax
+*/
+select * from elcn_statusbase where elcn_statusid = '378DE114-EB09-E511-943C-0050568068B7'; --elcn_name = Current
 
 
-	FROM
-		elcn_emailaddressbase
+-->> life total giving aux
+-- total of fair market value of all contributions except dues payments
+select top 1 * from elcn_contribution;
+select * from elcn_contributionbase
+where elcn_contributionnumber = 139856;
+/*elcn_amount_Base = 500
+elcn_AmountPaid 0
+elcn_amountpaid_base 0
+elcn_CharitableAmount 358
+elcn_charitableamount_Base 358
+elcn_TotalPremiumFairMarketValue 142
+elcn_totalpremiumfairmarketvalue_Base 142
+elcn_comments = 'Emerald Experience'
+elcn_contributionCategoryId 3A0E5F1A-A483-E911-80D7-0A253F89019C
+elcn_contributiondate datetime
+elcn_contributionNumber
+elcn_contributiontype 344220000
+*/
+
+select top 1 elcn_contributiondonorbase.elcn_name, elcn_contribution.elcn_TotalPremiumFairMarketValue from 
+			elcn_contributiondonorBase
+			JOIN elcn_contribution  
+				ON elcn_contributiondonorBase.elcn_contribution = elcn_contribution.elcn_contributionId
+
+;
+--->> RELATIONSHIPS
+
+select --prb.*, 
+cb1.FullName, prb.elcn_JointMailing, prb.elcn_PrimarySpouseId, prb.elcn_person1id, prb.elcn_person2id,
+cb2.FullName,
+elcn_ReciprocalRelationshipId, prt.elcn_type 
+from elcn_personalrelationshipBase prb
+join contactbase cb1 on prb.elcn_person1id = cb1.contactid 
+left join contactbase cb2 on prb.elcn_person2id = cb2.contactid 
+
+left join elcn_personalrelationshiptype prt on elcn_RelationshipType1Id  = elcn_personalrelationshiptypeid 
+--where elcn_person1id = 'E9397505-12EC-42DD-94D3-DC5F3E089E80';
+where elcn_RelationshipType1Id = '4A295D4F-A6EE-E411-942F-005056804B43'
+and prb.statuscode = 1;
+
+
+select contactid, contactbase.lastname, firstname, fullname, statuscode   from contactbase where fullname = 'Aaron Aaron';
+
+/*elcn_PrimarySpouseId 6F9A8948-F7F6-4177-992A-91C5765FC3A6
+elcn_ReciprocalRelationshipId 179C114E-4A5E-4307-A685-A9BB43A53A49
+elcn_RelationshipType1Id 4F665855-A3B8-E911-80D8-0A253F89019C
+elcn_RelationshipType2Id 4F665855-A3B8-E911-80D8-0A253F89019C
+*/
+
+
+select elcn_personalrelationshiptypeid, elcn_type from elcn_personalrelationshiptype
+where elcn_personalrelationshiptypeid = '4F665855-A3B8-E911-80D8-0A253F89019C' ;--spouse/partner
+/*elcn_personalrelationshiptypeid	elcn_type
+A012E0B9-2906-E511-9430-005056804B43	Advisee
+27005FC3-2906-E511-9430-005056804B43	Attorney
+56295D4F-A6EE-E411-942F-005056804B43	Aunt/Uncle
+149A78D8-2906-E511-9430-005056804B43	Business Associate
+31665855-A3B8-E911-80D8-0A253F89019C	Business Partner
+4C295D4F-A6EE-E411-942F-005056804B43	Child
+35665855-A3B8-E911-80D8-0A253F89019C	Child-In-Law
+27299DCB-2906-E511-9430-005056804B43	Client
+7666C0DE-2906-E511-9430-005056804B43	Coach
+DAF5578E-2906-E511-9430-005056804B43	Colleague
+82B9D605-2A06-E511-9430-005056804B43	College Advisor
+290B05F3-7929-E511-9445-0050568046F2	Cousin
+39665855-A3B8-E911-80D8-0A253F89019C	Deceased Spouse/Partner
+62295D4F-A6EE-E411-942F-005056804B43	Domestic Partner
+3848E79E-4B7F-4CAC-83C7-D8562CADBAD9	Ex-Domestic Partner
+48295D4F-A6EE-E411-942F-005056804B43	Ex-Spouse
+B10E6EAF-2906-E511-9430-005056804B43	Financial Advisor
+3B665855-A3B8-E911-80D8-0A253F89019C	Former Life Partner
+3D665855-A3B8-E911-80D8-0A253F89019C	Former Spouse / Partner
+5C295D4F-A6EE-E411-942F-005056804B43	Friend
+50295D4F-A6EE-E411-942F-005056804B43	Grandchild
+4E295D4F-A6EE-E411-942F-005056804B43	Grandparent
+3848E79E-4B7F-4CAC-83C6-D8562CADBAD9	Late Domestic Partner
+44295D4F-A6EE-E411-942F-005056804B43	Late Spouse
+43665855-A3B8-E911-80D8-0A253F89019C	Life Partner
+58295D4F-A6EE-E411-942F-005056804B43	Niece/Nephew
+4A295D4F-A6EE-E411-942F-005056804B43	Parent
+49665855-A3B8-E911-80D8-0A253F89019C	Parent-In-Law
+5BE8BB7B-B836-E511-9433-005056804B43	Personal Contact
+124E11E9-2906-E511-9430-005056804B43	Player
+467B34EF-2906-E511-9430-005056804B43	Professor
+63D8939B-2906-E511-9430-005056804B43	Referral
+D0C44EA3-2906-E511-9430-005056804B43	Referred By
+4B665855-A3B8-E911-80D8-0A253F89019C	Roommate
+52295D4F-A6EE-E411-942F-005056804B43	Sibling
+42295D4F-A6EE-E411-942F-005056804B43	Spouse
+4F665855-A3B8-E911-80D8-0A253F89019C	Spouse / Partner
+55665855-A3B8-E911-80D8-0A253F89019C	Step Sibling
+60295D4F-A6EE-E411-942F-005056804B43	Stepchild
+5E295D4F-A6EE-E411-942F-005056804B43	Stepparent
+2F597DF5-2906-E511-9430-005056804B43	Student
+3848E79E-4B7F-4CAC-83C5-D8562CADBAD9	Surviving Domestic Partner
+46295D4F-A6EE-E411-942F-005056804B43	Surviving Spouse
+57665855-A3B8-E911-80D8-0A253F89019C	Widow/Widower
+
+
+--NEED 
+--RELATION_SOURCE - not needed
+--RELATION_SOURCE_DESC
+	elcn_personalrelationshiptype.elcn_type
+
+--COMBINED_MAILING_PRIORITY
+--COMBINED_MAILING_PRIORITY_DESC
+	elcn_personalrelationshipbase.elcn_JointMailing
+
+--HOUSEHOLD_IND -- not mapped
+
+*/
