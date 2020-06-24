@@ -1,7 +1,7 @@
 ﻿/* Reto Egeter, fullparam.wordpress.com */
 
 DECLARE	@SearchStrTableName nvarchar(255), @SearchStrColumnName nvarchar(255), @SearchStrColumnValue nvarchar(255), @SearchStrInXML bit, @FullRowResult bit, @FullRowResultRows int
-SET @SearchStrColumnValue = '%9B3592D4-249A-474A-AE24-328CAE05B127%' /* use LIKE syntax */
+SET @SearchStrColumnValue = '%CD0141A1-A383-E911-80D7-0A253F89019C%' /* use LIKE syntax */
 SET @FullRowResult = 1
 SET @FullRowResultRows = 3
 SET @SearchStrTableName = NULL /* NULL for all tables, uses LIKE syntax */
@@ -25,6 +25,7 @@ BEGIN
 		FROM 	INFORMATION_SCHEMA.TABLES
 		WHERE 		TABLE_TYPE = 'BASE TABLE'
 			AND TABLE_NAME LIKE COALESCE(@SearchStrTableName,TABLE_NAME)
+--and TABLE_NAME like '%elcn_membership%'
 			AND	QUOTENAME(TABLE_SCHEMA) + '.' + QUOTENAME(TABLE_NAME) > @TableName
 			AND	OBJECTPROPERTY(OBJECT_ID(QUOTENAME(TABLE_SCHEMA) + '.' + QUOTENAME(TABLE_NAME)), 'IsMSShipped') = 0
 	)

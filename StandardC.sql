@@ -1,5 +1,5 @@
 ﻿/*
-IF OBJECT_ID('tempdb..#temp_education') IS NOT NULL DROP TABLE #temp_education
+IF OBJECT_ID('tempdb..#temp_membership') IS NOT NULL DROP TABLE #temp_membership
 GO
 
 SELECT
@@ -58,8 +58,8 @@ GO
 		    			 '89799F16-C4E8-4269-B409-5756998F193F') --Casual Joint Saluation (CIFL)
 		--AND elcn_personid = 'E9397505-12EC-42DD-94D3-DC5F3E089E80'
 --	group by elcn_personid
-
-CREATE NONCLUSTERED INDEX INDX_TMP_ID_SALU ON #temp_aprsalu (elcn_personId,salu_code)
+;
+CREATE NONCLUSTERED INDEX INDX_TMP_ID_SALU ON #temp_aprsalu (elcn_personId,salu_code);
 
 
 --select * from #temp_aprsalu where elcn_personid = 'E9397505-12EC-42DD-94D3-DC5F3E089E80'
@@ -71,7 +71,7 @@ select distinct
 into #temp_dontations
 from elcn_contributiondonorBase 
 --where elcn_person = 'E9397505-12EC-42DD-94D3-DC5F3E089E80'
-
+;
 CREATE NONCLUSTERED INDEX INDX_TMP_ID_YEAR ON #temp_donations (personId,givingyear desc);
 
 
@@ -91,10 +91,41 @@ FROM(
 	FOR elcn_ratingDescription  IN
 	([Value], [Level], [Score]) 
 ) PVT
+;
+CREATE NONCLUSTERED INDEX INDX_TMP_ID_RATINGTYPE ON #temp_ratings (elcn_personid, elcn_ratingtypeid);
 
-CREATE NONCLUSTERED INDEX INDX_TMP_ID_RATINGTYPE ON #temp_donations (elcn_personid, elcn_ratingtypeid);
+
+SELECT
+	elcn_PrimaryMemberPersonId, 
+	-- membership name
+	--elcn_membershipBase.elcn_MembershipLevelId , -- 9B3592D4-249A-474A-AE24-328CAE05B127
+	elcn_membershipprogramlevelbase.elcn_name ,
+	
+	-- membership status
+	--elcn_membershipBase.elcn_MembershipStatusId ,  --378DE114-EB09-E511-943C-0050568068B7
+	elcn_statusbase.elcn_name status,
+
+	-- membership number
+	elcn_membershipBase.elcn_MembershipNumber , --7701
+	
+	-- expiration date
+	CONVERT(DATE, elcn_membershipBase.elcn_ExpireDate) elcn_ExpireDate  -- null
+INTO #temp_membership
+FROM
+	elcn_membershipBase
+	JOIN elcn_membershipprogramlevelbase
+		ON elcn_membershipBase.elcn_MembershipLevelId = elcn_membershipprogramlevelid
+		--AND (	elcn_membershipBase.elcn_ExpireDate is null
+		--	OR	elcn_membershipBase.elcn_ExpireDate > getdate()
+		--	)
+	JOIN elcn_statusbase
+		ON elcn_membershipBase.elcn_MembershipStatusId  = elcn_statusid
+
+--where elcn_PrimaryMemberPersonId = 'E9397505-12EC-42DD-94D3-DC5F3E089E80'
+;
+CREATE NONCLUSTERED INDEX INDX_TMP_ID_MEMBERSHIP ON #temp_membership (elcn_primarymemberpersonid);
+
 */--
-
 --------------T O P 
 --
 --
@@ -325,7 +356,7 @@ SELECT
 --->> ATVEXCL/Legacy codes spreadsheet
 
 	cb.anonymityType Anonymity_Type,
-	'?' Mail_Codes,
+	--'?' Mail_Codes,  -- 86'ed per Molly
 
 --->> RATINGS
 
@@ -436,21 +467,23 @@ SELECT
 	longest_consec.longest_consec_years  LONGEST_CONS_YEARS_GIVEN,
 	consec.consecyears RECENT_CONSECUTIVE_YEARS,
 
-/*
-MEMBERSHIP_NAME
-MEMBERSHIP_STATUS
-MEMBERSHIP_NUMBER
-EXPIRATION_DATE
-WON_MEMBERSHIP_NAME
-WON_MEMBERSHIP_STATUS
-WON_MEMBERSHIP_NUMBER
-WON_EXPIRATION_DATE
-FAN_MEMBERSHIP_NAME
-FAN_MEMBERSHIP_STATUS
-FAN_MEMBERSHIP_NUMBER
-FAN_EXPIRATION_DATE
+	gen_membership.elcn_name MEMBERSHIP_NAME,
+	gen_membership.status MEMBERSHIP_STATUS,
+	gen_membership.elcn_membershipnumber MEMBERSHIP_NUMBER,
+	gen_membership.elcn_expiredate EXPIRATION_DATE,
 
-EMAIL_PREFERRED_ADDRESS
+	won_membership.elcn_name WON_MEMBERSHIP_NAME,
+	won_membership.status WON_MEMBERSHIP_STATUS,
+	won_membership.elcn_membershipnumber WON_MEMBERSHIP_NUMBER,
+	won_membership.elcn_expiredate	WON_EXPIRATION_DATE,
+
+	fan_membership.elcn_name FAN_MEMBERSHIP_NAME,
+	fan_membership.status FAN_MEMBERSHIP_STATUS,
+	fan_membership.elcn_membershipnumber FAN_MEMBERSHIP_NUMBER,
+	fan_membership.elcn_expiredate FAN_EXPIRATION_DATE,
+
+	eab.elcn_name EMAIL_PREFERRED_ADDRESS,
+/*
 PERS_EMAIL
 NSU_EMAIL
 AL_EMAIL
@@ -784,8 +817,60 @@ LEFT OUTER JOIN #temp_education edu_3 on edu_3.elcn_PersonId = cb.ContactID and 
 					AND ratings.elcn_personid = contactbase.contactid
 		)RATINGS2 ON cb.contactid = ratings2.contactid 
 
+	LEFT JOIN( -- general membership
+		SELECT
+			elcn_PrimaryMemberPersonId,
+			elcn_name,
+			status,
+			elcn_membershipnumber,
+			elcn_expiredate,
+			ROW_NUMBER() OVER (PARTITION BY elcn_PrimaryMemberPersonId,elcn_name 
+				ORDER BY ISNULL(elcn_expiredate,'31-DEC-2999') DESC) rn
+		FROM
+			#temp_membership
+		WHERE
+			(	elcn_name not like 'FAN%'
+				AND elcn_name not like 'WON%'
+			) 
 		
+	) GEN_MEMBERSHIP ON cb.contactid = gen_membership.elcn_PrimaryMemberPersonId
+			AND gen_membership.rn = 1
 
+	LEFT JOIN( -- Future Alumni Network (FAN) membership
+		SELECT
+			elcn_PrimaryMemberPersonId,
+			elcn_name,
+			status,
+			elcn_membershipnumber,
+			elcn_expiredate,
+			ROW_NUMBER() OVER (PARTITION BY elcn_PrimaryMemberPersonId,elcn_name 
+				ORDER BY ISNULL(elcn_expiredate,'31-DEC-2999') DESC) rn
+		FROM
+			#temp_membership
+		WHERE
+			elcn_name like 'FAN%'
+	) FAN_MEMBERSHIP ON cb.contactid = fan_membership.elcn_PrimaryMemberPersonId
+			AND fan_membership.rn = 1
+
+	LEFT JOIN( -- Women of Northeastern (WON) membership
+		SELECT
+			elcn_PrimaryMemberPersonId,
+			elcn_name,
+			status,
+			elcn_membershipnumber,
+			elcn_expiredate,
+			ROW_NUMBER() OVER (PARTITION BY elcn_PrimaryMemberPersonId,elcn_name 
+				ORDER BY ISNULL(elcn_expiredate,'31-DEC-2999') DESC) rn
+		FROM
+			#temp_membership
+		WHERE
+			elcn_name like 'WON%'
+	) WON_MEMBERSHIP ON cb.contactid = won_membership.elcn_PrimaryMemberPersonId
+			AND won_membership.rn = 1
+
+	LEFT JOIN elcn_emailaddressbase eab
+		ON eab.elcn_personid = cb.contactid 
+		AND eab.elcn_preferred = 1
 
 WHERE
 cb.statuscode =1
@@ -793,3 +878,4 @@ cb.statuscode =1
 and cb.datatel_EnterpriseSystemId in ( 'N00156288', 'N00142649') --'N00018518'
 --EF350F86-1561-47D1-85ED-FC295CBDD9C5
 ;
+--select * from #temp_membership where elcn_primarymemberpersonid = 'E9397505-12EC-42DD-94D3-DC5F3E089E80';

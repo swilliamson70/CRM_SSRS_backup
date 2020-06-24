@@ -1,6 +1,19 @@
 ﻿ select * from stringmapbase;
  
- select * from elcn_constituenttypebase
+ select * from elcn_constituenttypebase;
+ select elcn_primaryconstituentaffiliationid from contactbase ;---cb.cb.elcn_primaryconstituentaffiliationid
+
+ select * from elcn_constituentaffiliationBase; -- elcn_name 'Friend' elcn_ClassYear, elcn_CollegeId
+ 		SELECT 
+			elcn_constituenttypeBase.*,
+			filteredstringmap.value  
+		FROM
+			elcn_constituenttypeBase
+			JOIN filteredstringmap
+				ON elcn_constituenttypeBase.elcn_category = filteredstringmap.attributevalue 
+
+				AND FilteredViewName = 'Filteredelcn_constituenttype'
+				AND attributeName = 'elcn_category'
 
  select * from entity where name like 'elcn%' order by name 
 
@@ -355,6 +368,8 @@ and lastname = 'Foreman';
 
 select * from elcn_communicationlistBase -- elcn_name = Presidents Christmas Card List_P elcn_communicationslistid = 20271E62-5741-EA11-80D9-0A253F89019C
 
+-->> Membership
+
 -->> Membership name,status,number,exp date, won_x fields, fan_x fields 
 /*--CRM Constituents > People > R Ford - Related Date > Memberships
 -- name = 7701 - Raymond Ford
@@ -369,19 +384,21 @@ select * from elcn_communicationlistBase -- elcn_name = Presidents Christmas Car
 */
 select * from elcn_membershipbase 
 	--elcn_membershipid, 
-	--elcn_membershiplevelid, 9B3592D4-249A-474A-AE24-328CAE05B127 -- membership program level base
-	--elcn_membershipprogramid, 7B18FD29-B194-454E-B08C-8BEF85103417
-	--elcn_membershipstatusid, 378DE114-EB09-E511-943C-0050568068B7
+	--elcn_membershiplevelid, 9B3592D4-249A-474A-AE24-328CAE05B127 -- membership level designation base
+	--elcn_membershipprogramid, 7B18FD29-B194-454E-B08C-8BEF85103417 -- memebership program base
+	--elcn_membershipstatusid, 378DE114-EB09-E511-943C-0050568068B7 --
 	--elcn_primaryMemberPersonId = contactid
 where elcn_PrimaryMemberPersonId = 'E9397505-12EC-42DD-94D3-DC5F3E089E80'
 
-select * from elcn_membershipmemberBase;
+
+
+select * from elcn_membershipmemberBase where elcn_personid = 'E9397505-12EC-42DD-94D3-DC5F3E089E80';
 /* contains:
 elcn_PersonId
 elcn_MembershipId
 
 
-;
+
 select * from elcn_membershipprogramlevelBase;--where elcn_membershipprogramlevelid = '9B3592D4-249A-474A-AE24-328CAE05B127';
 -- contains elcn_name 'ALUMN - NSU Alumni Association - Life Single Membership'
 -- elcn_leveltype = 184AB2B6-5E0A-4999-AAA8-84679BCCF1C0
@@ -393,3 +410,103 @@ select * from elcn_membershipleveldesignationbase;
 
 
 select * from elcn_membershipprogramleveltype where elcn_membershipprogramleveltypeId = '9B3592D4-249A-474A-AE24-328CAE05B127'
+*/
+--NEED 
+select top 1
+-- membership name
+--elcn_membershipBase.elcn_MembershipLevelId , -- 9B3592D4-249A-474A-AE24-328CAE05B127
+elcn_membershipprogramlevelbase.elcn_name ,
+-- membership status
+--elcn_membershipBase.elcn_MembershipStatusId ,  --378DE114-EB09-E511-943C-0050568068B7
+elcn_statusbase.elcn_name ,
+-- membership number
+elcn_membershipBase.elcn_MembershipNumber , --7701
+-- expiration date
+isnull(elcn_membershipBase.elcn_ExpireDate,'31-DEC-2999')  -- null
+from elcn_membershipBase
+	join elcn_membershipprogramlevelbase
+		on elcn_membershipBase.elcn_MembershipLevelId = elcn_membershipprogramlevelid
+	join elcn_statusbase
+		on elcn_membershipBase.elcn_MembershipStatusId  = elcn_statusid
+where elcn_PrimaryMemberPersonId = 'E9397505-12EC-42DD-94D3-DC5F3E089E80'
+and			(	elcn_membershipBase.elcn_name not like 'FAN%'
+				AND elcn_membershipBase.elcn_name not like 'WON%'
+			) 
+ORDER BY ISNULL(elcn_membershipBase.elcn_expiredate,'31-DEC-2999') DESC;
+
+select elcn_membershipprogramlevelid,elcn_name  from elcn_membershipprogramlevelbase
+where elcn_name like 'WON%'--elcn_membershipprogramlevelid = '9B3592D4-249A-474A-AE24-328CAE05B127';
+
+select * from elcn_statusbase where elcn_statusid = '378DE114-EB09-E511-943C-0050568068B7';
+
+select getdate()
+
+-->> EMAIL
+
+select * from elcn_emailaddressbase
+where elcn_personid = 'E9397505-12EC-42DD-94D3-DC5F3E089E80'
+--and elcn_preferred = 1
+and statuscode = 1
+and elcn_typeid = 'CD0141A1-A383-E911-80D7-0A253F89019C' -- personal?
+select elcn_emailaddresstypeid, elcn_type from elcn_emailaddresstypebase
+/*elcn_emailaddresstypeid	elcn_type
+CC0141A1-A383-E911-80D7-0A253F89019C	Business
+CD0141A1-A383-E911-80D7-0A253F89019C	Personal
+31292157-E075-4E85-9204-1CCEDEC9DBF9	Other Email
+F523FC9B-5370-46F3-9242-263411E73043	Yellow - Waiting Authorization
+A4B7A0CC-0DFF-4069-8337-6571B94CA5BD	Alumni Email
+26E175F1-4286-4B7E-9CE9-F2E383D58EFD	Northeastern State University Email
+*/
+select * from elcn_statusbase where elcn_statusid = '050FE7CB-5508-E511-943C-0050568068B7'
+/*
+
+elcn_EmailAddressStatusId
+378DE114-EB09-E511-943C-0050568068B7 -- current
+050FE7CB-5508-E511-943C-0050568068B7 -- past
+*/
+SELECT elcn_personid, elcn_ratingtypeid, [Value], [Level], [Score]
+--INTO #temp_ratings
+FROM(
+	SELECT
+		elcn_ratingBase.elcn_ratingDescription , --for each 'Value'/'Score'/'Level' columns
+		elcn_ratingBase.elcn_personid, -- grouped by person UID for person rows
+		elcn_ratingBase.elcn_ratingtypeid, -- then by ratingtype UID for rating company
+		elcn_ratingBase.elcn_ratingvalue -- for aggr count this - data
+	FROM
+		elcn_ratingBase
+) T PIVOT
+(	
+	MAX(elcn_ratingvalue)
+	FOR elcn_ratingDescription  IN
+	([Value], [Level], [Score]) 
+) PVT
+;
+select * 
+FROM(
+	SELECT
+		elcn_typeid,
+		case elcn_typeid
+			WHEN 'CC0141A1-A383-E911-80D7-0A253F89019C' THEN 'Business'
+			WHEN 'CC0141A1-A383-E911-80D7-0A253F89019C' THEN 'Personal'
+			WHEN '31292157-E075-4E85-9204-1CCEDEC9DBF9'	THEN 'Other'
+			WHEN 'F523FC9B-5370-46F3-9242-263411E73043' THEN 'Yellow ' -- Waiting Authorization
+			WHEN 'A4B7A0CC-0DFF-4069-8337-6571B94CA5BD'	THEN 'Alumni'
+			WHEN '26E175F1-4286-4B7E-9CE9-F2E383D58EFD'	THEN 'NSU'
+			ELSE 'Unknown'
+		END AS emailtype,
+
+		elcn_personid,
+		elcn_preferred,
+		elcn_email
+	FROM
+		elcn_emailaddressbase
+	WHERE
+		statuscode = 1
+)T PIVOT 
+(	MAX(elcn_email)
+	FOR emailtype 
+	IN ([Business],
+
+
+	FROM
+		elcn_emailaddressbase
