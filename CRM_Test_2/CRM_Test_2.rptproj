@@ -54,7 +54,8 @@
   <ItemGroup>
     <Report Include="ConstituentProfileReport.rdl" />
     <Report Include="Lybunt.rdl" />
-    <Report Include="StringMapBase.rdl" />
+    <Report Include="Report2.rdl" />
+    <Report Include="StringMapBase test.rdl" />
   </ItemGroup>
   <Import Project="$(MSBuildExtensionsPath)\Reporting Services\Microsoft.ReportingServices.MSBuilder.targets" />
 </Project>

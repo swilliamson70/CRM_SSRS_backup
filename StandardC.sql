@@ -759,7 +759,7 @@ LIFETIME_HOUSEHOLD_GIVING -- Householding tools in CRM 3.0
 	edu_3.Degree_Name AS Degree3_Degree_Desc,--DEGREE_DESC_3
 --MAJOR_3
 	edu_3.Major AS Degree3_Major,--MAJOR_DESC_3
-	edu_3.Degree_Year Degree3_Degree_Year --DEGREE_YEAR_3
+	edu_3.Degree_Year Degree3_Degree_Year, --DEGREE_YEAR_3
 
 
 
@@ -775,19 +775,22 @@ LIFETIME_HOUSEHOLD_GIVING -- Householding tools in CRM 3.0
 --edu_2.Academic_Program AS Degree2_Acadmic_Program,
 --edu_3.Academic_Program AS Degree3_Acadmic_Program
 
-/*
+/* APRPROS not in mapping spreadsheet
 SPEC_PURPOSE_TYPE -- place of work 
 SPEC_PURPOSE_TYPE_DESC
 SPEC_PURPOSE_GROUP
 SPEC_PURPOSE_GROUP_DESC
-EMPLOYER
-POSITION
-
-VETERAN_IND
-GURIDEN_DESC
-ACTIVITIES
+*/
+	elcn_OrganizationIdName EMPLOYER,
+	elcn_JobTitle POSITION,
+	elcn_BusinessRelationshipStatusIdName Status,
 
 
+--VETERAN_IND
+--GURIDEN_DESC
+	activities.alist ACTIVITIES
+
+/*
 
 
 
@@ -1061,11 +1064,34 @@ LEFT OUTER JOIN #temp_education edu_3 on edu_3.elcn_PersonId = cb.ContactID and 
 			prb.statuscode = 1
 	)RELATIONSHIP ON cb.contactid = relationship.elcn_person1id
 
+	LEFT JOIN(
+		SELECT
+			elcn_personid,
+			elcn_JobTitle, 
+			elcn_OrganizationIdName,
+			elcn_BusinessRelationshipStatusIdName
+		FROM 
+			elcn_businessrelationship
+		WHERE
+			statuscode =1
+			--AND elcn_BusinessRelationshipStatusIdName limit?
+	)JOB ON cb.contactid = job.elcn_personid 
+	LEFT JOIN(
+		SELECT
+			elcn_personid,
+			STRING_AGG(ib.elcn_name + ' (' + sb.elcn_name + ')', ';') AS ALIST
+		FROM
+			elcn_involvementBase ib 
+			JOIN elcn_statusbase sb 
+				ON ib.elcn_InvolvementStatusId = sb.elcn_statusid
+		GROUP BY elcn_personid
+	)ACTIVITIES ON cb.contactid = activities.elcn_personid 
+
 			
 WHERE
 cb.statuscode =1
 --and cb.fullname like 'Robert C Sanders'
-and cb.datatel_EnterpriseSystemId in ( 'N00156288', 'N00142649') --'N00018518'
+--and cb.datatel_EnterpriseSystemId in ( 'N00156288', 'N00142649') --'N00018518'
 --EF350F86-1561-47D1-85ED-FC295CBDD9C5
 ;
 --select * from #temp_email_slot where elcn_personid = 'E9397505-12EC-42DD-94D3-DC5F3E089E80';

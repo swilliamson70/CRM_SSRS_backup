@@ -13,8 +13,16 @@
     <DataSet Name="StringMapBase">
       <Query>
         <DataSourceName>MSCRM_DataSource</DataSourceName>
-        <CommandText>SELECT        ObjectTypeCode, AttributeName, AttributeValue, LangId, OrganizationId, Value, DisplayOrder, StringMapId
-FROM            StringMapBase</CommandText>
+        <QueryParameters>
+          <QueryParameter Name="@value">
+            <Value>=Parameters!value.Value</Value>
+          </QueryParameter>
+        </QueryParameters>
+        <CommandText>
+
+SELECT        ObjectTypeCode, AttributeName, AttributeValue, LangId, OrganizationId, Value, DisplayOrder, StringMapId
+FROM            StringMapBase
+where attributevalue = (@value)</CommandText>
       </Query>
       <Fields>
         <Field Name="ObjectTypeCode">
@@ -624,7 +632,7 @@ FROM            StringMapBase</CommandText>
             <Top>0.67583in</Top>
             <Left>0.18625in</Left>
             <Height>0.5in</Height>
-            <Width>17.14583in</Width>
+            <Width>17.14584in</Width>
             <Style>
               <Border>
                 <Style>None</Style>
@@ -639,7 +647,7 @@ FROM            StringMapBase</CommandText>
           </Border>
         </Style>
       </Body>
-      <Width>17.33208in</Width>
+      <Width>17.33209in</Width>
       <Page>
         <LeftMargin>1in</LeftMargin>
         <RightMargin>1in</RightMargin>
@@ -649,10 +657,23 @@ FROM            StringMapBase</CommandText>
       </Page>
     </ReportSection>
   </ReportSections>
+  <ReportParameters>
+    <ReportParameter Name="value">
+      <DataType>String</DataType>
+      <Prompt>value</Prompt>
+    </ReportParameter>
+  </ReportParameters>
   <ReportParametersLayout>
     <GridLayoutDefinition>
       <NumberOfColumns>4</NumberOfColumns>
       <NumberOfRows>2</NumberOfRows>
+      <CellDefinitions>
+        <CellDefinition>
+          <ColumnIndex>1</ColumnIndex>
+          <RowIndex>0</RowIndex>
+          <ParameterName>value</ParameterName>
+        </CellDefinition>
+      </CellDefinitions>
     </GridLayoutDefinition>
   </ReportParametersLayout>
   <rd:ReportUnitType>Inch</rd:ReportUnitType>

@@ -347,7 +347,7 @@ where statuscode = 1
 AND cpb.elcn_ContactPreferenceStatusId = '378DE114-EB09-E511-943C-0050568068B7' /*Current*/
 
 ;
-
+/*
 	(CASE WHEN(
 		SELECT COUNT(*) FROM elcn_contactpreferenceBase cpb
 		WHERE cpb.elcn_ContactPreferenceTypeId = 'e4e02dc6-3314-e511-9431-005056804b43' /*Solicitations*/
@@ -358,7 +358,7 @@ AND cpb.elcn_ContactPreferenceStatusId = '378DE114-EB09-E511-943C-0050568068B7' 
 		AND cpb.elcn_personId = cb.ContactId
 		) > 0 THEN 'NTP' ELSE NULL END) AS NTP,
 
-
+*/
 -->> MAIL CODES
 select * from elcn_communicationlistmemberBase
 join contactbase
@@ -622,8 +622,10 @@ where elcn_RelationshipType1Id = '4A295D4F-A6EE-E411-942F-005056804B43'
 and prb.statuscode = 1;
 
 
-select contactid, contactbase.lastname, firstname, fullname, statuscode   from contactbase where fullname = 'Aaron Aaron';
+select contactid, cb.lastname, firstname, fullname, cb.datatel_EnterpriseSystemId, statuscode    from contactbase cb where datatel_EnterpriseSystemId is null-- where fullname = 'Aaron Aaron';
 
+
+select * from contact where elcn_sortname like '%KEELAN%' ;--contactid = '4770AA6C-F5D9-42F1-A42A-0276683582FD';
 /*elcn_PrimarySpouseId 6F9A8948-F7F6-4177-992A-91C5765FC3A6
 elcn_ReciprocalRelationshipId 179C114E-4A5E-4307-A685-A9BB43A53A49
 elcn_RelationshipType1Id 4F665855-A3B8-E911-80D8-0A253F89019C
@@ -692,3 +694,47 @@ D0C44EA3-2906-E511-9430-005056804B43	Referred By
 --HOUSEHOLD_IND -- not mapped
 
 */
+select * /*distinct elcn_BusinessRelationshipTypeIdName*/ from elcn_businessrelationship
+where  elcn_personid = 'E9397505-12EC-42DD-94D3-DC5F3E089E80' and
+  elcn_BusinessRelationshipTypeId ='7CCE6614-A483-E911-80D7-0A253F89019C'
+and elcn_BusinessRelationshipStatusId = '558DE114-EB09-E511-943C-0050568068B7'
+--elcn_JobTitle = Pilot/Instructor, Pilot Simulator
+--elcn_OrganizationIdName =US Air Force/American Airlines
+--elcn_BusinessRelationshipStatusIdName = Retired
+
+select elcn_businessrelationshiptypeid,elcn_type from elcn_businessrelationshiptype
+where elcn_businessrelationshiptypeid = '7CCE6614-A483-E911-80D7-0A253F89019C' -- employee
+
+select * from elcn_statusbase where elcn_statusid = '558DE114-EB09-E511-943C-0050568068B7' --retired
+
+
+-->> Involvement (Activities)
+
+select * from elcn_involvementbase i where elcn_personid = 'E9397505-12EC-42DD-94D3-DC5F3E089E80'
+
+select elcn_personid, string_agg(ib.elcn_name + ' (' + sb.elcn_name + ')', ';') as activity from elcn_involvementBase ib 
+	join elcn_statusbase sb on ib.elcn_InvolvementStatusId = sb.elcn_statusid
+
+where ib.elcn_personid = 'E9397505-12EC-42DD-94D3-DC5F3E089E80'
+	group by elcn_personid 
+select * from elcn_statusbase where elcn_statusid = '378DE114-EB09-E511-943C-0050568068B7' -- elcn_name = current
+select * from elcn_involvementactivity;
+select top 5 elcn_involvementactivityid, elcn_name  from elcn_involvementactivityBase; -- activiies 
+/*elcn_involvementactivityid	elcn_name
+1E045733-25CB-4F13-AE19-98F14F6B95E2	1958 Football Team
+BA888E82-9AA2-40EA-93B5-087FA9600AF1	1963 Football Team
+A3A35777-9E7E-4E91-8D4E-2BBEBAF84A86	1994 Nat'l Champ Football Team
+E7DB033D-40AF-469F-9720-E4C8E0878667	1994 PLC Freshman Class
+561CAE7F-6787-460C-8E98-19B746BAB64B	9/11 Day of Service*/
+
+select  * from elcn_contributiondonor
+where datepart(YYYY,elcn_ContributionDate) =  @donationYear ;
+
+
+
+
+select count(*) from Contactbase where datatel_enterprisesystemid is null --20846
+select count(*) from ContactBase --105850
+
+
+
