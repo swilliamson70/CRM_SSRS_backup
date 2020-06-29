@@ -1,8 +1,0 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
-<RptDataSource xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" Name="MSCRM_DataSource">
-  <ConnectionProperties>
-    <Extension>SQL</Extension>
-    <ConnectString>Data Source=advancecrm.us-east-2.aws.prod.nsuok.edu,1433;Initial Catalog=advcrm;Connect Timeout=30;Encrypt=False;TrustServerCertificate=False;ApplicationIntent=ReadWrite;MultiSubnetFailover=False</ConnectString>
-  </ConnectionProperties>
-  <DataSourceID>e702c4b9-bab2-4353-a8bd-8ab78beb2764</DataSourceID>
-</RptDataSource>
