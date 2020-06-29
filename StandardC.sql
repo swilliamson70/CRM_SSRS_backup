@@ -1,8 +1,4 @@
-﻿/*
-IF OBJECT_ID('tempdb..#temp_email_slot') IS NOT NULL DROP TABLE #temp_email_slot
-GO
-
-SELECT
+﻿SELECT
 	e.elcn_PersonID,
 	e.elcn_educationid,
 	d.elcn_code DEGREE,
@@ -18,7 +14,6 @@ SELECT
 		Where emb.elcn_educationid = e.elcn_educationId
 	) AS Major,
 	ROW_NUMBER() OVER(PARTITION BY e.elcn_personId 
-					--ORDER BY e.elcn_institutionpreferred DESC, e.createdon ASC) as rank_no
 					ORDER BY e.elcn_DegreeYear DESC) AS RANK_NO
 INTO #temp_education
 FROM dbo.elcn_educationBase e
@@ -29,51 +24,42 @@ FROM dbo.elcn_educationBase e
 
 	LEFT OUTER JOIN elcn_academicprogramBase apb ON apb.elcn_academicprogramId = e.elcn_academicprogramId 
 WHERE e.statuscode = 1
+;
 
-CREATE NONCLUSTERED INDEX INDX_TMP_EDUCATION_RANKS ON #temp_education (elcn_personId)
+CREATE NONCLUSTERED INDEX INDX_TMP_EDUCATION_RANKS ON #temp_education (elcn_personId);
 
-Select * from #temp_education where elcn_personid = '9749076E-AF8D-4CB7-8C13-207DB8881012' order by 1
-
-IF OBJECT_ID('tempdb..#temp_aprsalu') IS NOT NULL DROP TABLE #temp_aprsalu
-GO
-
-	select 
-		elcn_personid,
-		CASE elcn_typeid 
-			WHEN '1172C46B-462D-E411-9415-005056804B43' THEN 'CIFE'
-			WHEN '0F72C46B-462D-E411-9415-005056804B43' THEN 'SIFE'
-			WHEN '1B72C46B-462D-E411-9415-005056804B43' THEN 'SIFL'
-			WHEN '89799F16-C4E8-4269-B409-5756998F193F' THEN 'CIFL'
-			ELSE cast(elcn_typeid as varchar(40))
-		END AS SALU_CODE,
-		/*max(elcn_formattedname)*/ elcn_formattedname
-	INTO
-		#temp_aprsalu
-	FROM
-		elcn_formattednamebase
-	WHERE
-		elcn_typeid in ('1172C46B-462D-E411-9415-005056804B43', -- Joint Mailing Name (CIFE)
-			    		 '0F72C46B-462D-E411-9415-005056804B43', --Mailing Name (SIFE)
-	     				 '1B72C46B-462D-E411-9415-005056804B43', --Casual Salutation (SIFL)
-		    			 '89799F16-C4E8-4269-B409-5756998F193F') --Casual Joint Saluation (CIFL)
-		--AND elcn_personid = 'E9397505-12EC-42DD-94D3-DC5F3E089E80'
---	group by elcn_personid
+SELECT 
+	elcn_personid,
+	CASE elcn_typeid 
+		WHEN '1172C46B-462D-E411-9415-005056804B43' THEN 'CIFE'
+		WHEN '0F72C46B-462D-E411-9415-005056804B43' THEN 'SIFE'
+		WHEN '1B72C46B-462D-E411-9415-005056804B43' THEN 'SIFL'
+		WHEN '89799F16-C4E8-4269-B409-5756998F193F' THEN 'CIFL'
+		ELSE cast(elcn_typeid as varchar(40))
+	END AS SALU_CODE,
+	elcn_formattedname
+INTO
+	#temp_aprsalu
+FROM
+	elcn_formattednamebase
+WHERE
+	elcn_typeid in ('1172C46B-462D-E411-9415-005056804B43', -- Joint Mailing Name (CIFE)
+			    		'0F72C46B-462D-E411-9415-005056804B43', --Mailing Name (SIFE)
+	     				'1B72C46B-462D-E411-9415-005056804B43', --Casual Salutation (SIFL)
+		    			'89799F16-C4E8-4269-B409-5756998F193F') --Casual Joint Saluation (CIFL)
 ;
 CREATE NONCLUSTERED INDEX INDX_TMP_ID_SALU ON #temp_aprsalu (elcn_personId,salu_code);
 
-
---select * from #temp_aprsalu where elcn_personid = 'E9397505-12EC-42DD-94D3-DC5F3E089E80'
----------------
-select distinct 
+SELECT DISTINCT  
 	elcn_person personid,
 	datepart(YYYY,elcn_ContributionDate)givingyear,
 	datepart(YYYY,elcn_ContributionDate) -1 prevyear
-into #temp_dontations
-from elcn_contributiondonorBase 
---where elcn_person = 'E9397505-12EC-42DD-94D3-DC5F3E089E80'
+INTO
+	#temp_dontations
+FROM
+	elcn_contributiondonorBase 
 ;
-CREATE NONCLUSTERED INDEX INDX_TMP_ID_YEAR ON #temp_donations (personId,givingyear desc);
-
+--CREATE NONCLUSTERED INDEX INDX_TMP_ID_YEAR ON #temp_donations (personId,givingyear desc);
 
 SELECT elcn_personid, elcn_ratingtypeid, [Value], [Level], [Score]
 INTO #temp_ratings
@@ -94,34 +80,19 @@ FROM(
 ;
 CREATE NONCLUSTERED INDEX INDX_TMP_ID_RATINGTYPE ON #temp_ratings (elcn_personid, elcn_ratingtypeid);
 
-
 SELECT
 	elcn_PrimaryMemberPersonId, 
-	-- membership name
-	--elcn_membershipBase.elcn_MembershipLevelId , -- 9B3592D4-249A-474A-AE24-328CAE05B127
 	elcn_membershipprogramlevelbase.elcn_name ,
-	
-	-- membership status
-	--elcn_membershipBase.elcn_MembershipStatusId ,  --378DE114-EB09-E511-943C-0050568068B7
 	elcn_statusbase.elcn_name status,
-
-	-- membership number
 	elcn_membershipBase.elcn_MembershipNumber , --7701
-	
-	-- expiration date
 	CONVERT(DATE, elcn_membershipBase.elcn_ExpireDate) elcn_ExpireDate  -- null
 INTO #temp_membership
 FROM
 	elcn_membershipBase
 	JOIN elcn_membershipprogramlevelbase
 		ON elcn_membershipBase.elcn_MembershipLevelId = elcn_membershipprogramlevelid
-		--AND (	elcn_membershipBase.elcn_ExpireDate is null
-		--	OR	elcn_membershipBase.elcn_ExpireDate > getdate()
-		--	)
 	JOIN elcn_statusbase
 		ON elcn_membershipBase.elcn_MembershipStatusId  = elcn_statusid
-
---where elcn_PrimaryMemberPersonId = 'E9397505-12EC-42DD-94D3-DC5F3E089E80'
 ;
 CREATE NONCLUSTERED INDEX INDX_TMP_ID_MEMBERSHIP ON #temp_membership (elcn_primarymemberpersonid);
 
@@ -165,7 +136,6 @@ FROM(
 	WHERE
 		statuscode =1 
 		AND	elcn_EmailAddressStatusId = '378DE114-EB09-E511-943C-0050568068B7' -- current
-										-- 050FE7CB-5508-E511-943C-0050568068B7 -- past
 		AND elcn_preferred = 1
 
 )T PIVOT 
@@ -176,14 +146,11 @@ FROM(
 
 CREATE NONCLUSTERED INDEX INDX_TMP_ID ON #temp_email_slot (elcn_personid);
 
-
 -->> Phone
 SELECT
 	elcn_personid, --guid 
 	elcn_phonenumber, --phone number
-	--elcn_PhoneStatusId, --378DE114-EB09-E511-943C-0050568068B7
-	--elcn_phonetype, --CE0141A1-A383-E911-80D7-0A253F89019C
-	elcn_phonetypebase.elcn_type ,
+	elcn_phonetypebase.elcn_type,
 	elcn_preferred -- 0/1
 INTO #temp_phone
 FROM
@@ -193,22 +160,20 @@ FROM
 		AND elcn_phonebase.elcn_phonestatusid = '378DE114-EB09-E511-943C-0050568068B7' -- Current
 		AND elcn_phonebase.statuscode = 1
 ; 
-
 CREATE NONCLUSTERED INDEX INDX_TMP_ID ON #temp_phone (elcn_personid);
-*/--
+
 --------------T O P 
 --
 --
 --
 
-with w_get_consec_years AS ( -- (PersonId, GivingYear, prevyear, yearchain, consecyears) 
+with w_get_consec_years AS ( 
 --anchor 
 	select personid,
 		givingyear,
 		prevyear,
 		1 consecyears
 	from #temp_dontations
-	--where givingyear = 2018 << datepart(YYYY, @p_EndDate) 
 --recusive memeber
 	union all
 	select d.personid,
@@ -219,18 +184,15 @@ with w_get_consec_years AS ( -- (PersonId, GivingYear, prevyear, yearchain, cons
 		inner join w_get_consec_years cte
 			on cte.personid = d.personid
 			and d.givingyear -1 = cte.givingyear
-			-- and cte.givingyear between datepart(YYYY,@p_StartDate) and datepart(YYYY, @p_EndDate)
 --termination
-
 ),
-	w_get_longest_consec_years AS ( -- (PersonId, GivingYear, prevyear, yearchain, consecyears) 
+	w_get_longest_consec_years AS ( 
 --anchor 
 	select personid,
 		givingyear,
 		prevyear,
 		1 consecyears
 	from #temp_dontations
-	--where givingyear = 2018 << datepart(YYYY, @p_EndDate) 
 --recusive memeber
 	union all
 	select d.personid,
@@ -242,10 +204,7 @@ with w_get_consec_years AS ( -- (PersonId, GivingYear, prevyear, yearchain, cons
 			on cte.personid = d.personid
 			and d.givingyear -1 = cte.givingyear
 --termination
-
 )
---select * from w_get_consec_years 
---order by personid,givingyear desc;
 
 SELECT
 	cb.ContactId,
@@ -283,30 +242,7 @@ SELECT
 		ORDER BY pnb.CreatedOn
 	) AS MAIDEN_LAST_NAME,
 
-/*	(
-		SELECT TOP 1
-			elcn_formattedname
-		FROM
-			#temp_aprsalu salu
-		WHERE
-			cb.contactid = salu.elcn_personid 
-			AND salu.salu_code IN ('CIFE','SIFE')
-		ORDER BY CASE WHEN salu.salu_code = 'CIFE' THEN 1 ELSE 2 END
-	) AS PREFERRED_FULL_W_SALUTATION,
-*/
 	COALESCE(cife_salu.elcn_formattedname,sife_salu.elcn_formattedname) PREFERRED_FULL_W_SALUTATION,
-	
-/*	(
-		SELECT TOP 1
-			elcn_formattedname
-		FROM
-			#temp_aprsalu salu
-		WHERE
-			cb.contactid = salu.elcn_personid 
-			AND salu.salu_code IN ('CIFL','SIFL')
-		ORDER BY CASE WHEN salu.salu_code = 'CIFL' THEN 1 ELSE 2 END
-	) AS PREFERRED_SHORT_W_SALUTATION,
-*/
 	COALESCE(cifl_salu.elcn_formattedname,sifl_salu.elcn_formattedname) PREFERRED_SHORT_W_SALUTATION,
 	sife_salu.elcn_formattedname SIFE,
 	sifl_salu.elcn_formattedname SIFL,
@@ -413,23 +349,9 @@ SELECT
 		AND cpb.elcn_personId = cb.ContactId
 		) > 0 THEN 'NTP' ELSE NULL END) AS NTP,
 
-
---	AMS - Donation Anonymous - 6/18 no one has an anon restriction
-/*	(CASE WHEN(
-		SELECT COUNT(*) FROM elcn_contactpreferenceBase cpb
-		WHERE cpb.elcn_ContactRestrictionId = '404E206F-9EB8-E911-80D8-0A253F89019C' /*Donation Anonymous*/
-		AND (cpb.elcn_RestrictionLiftDate < CURRENT_TIMESTAMP OR cpb.elcn_RestrictionLiftDate IS NULL)
-		AND cpb.elcn_ContactPreferenceStatusId = '378DE114-EB09-E511-943C-0050568068B7' /*Current*/
-		AND cpb.elcn_personId = cb.ContactId
-		) > 0 THEN 'AMS' ELSE NULL END) AS AMS
-*/
---->> ATVEXCL/Legacy codes spreadsheet
-
 	cb.anonymityType Anonymity_Type,
-	--'?' Mail_Codes,  -- 86'ed per Molly
 
 --->> RATINGS
-
 	ratings1.rating_type RATING_TYPE1,
 	ratings1.rating_score RATING_AMOUNT1,
 	ratings1.rating_value RATING1,
@@ -444,7 +366,6 @@ SELECT
 	null RATING_AMOUNT3,
 	null RATING3,
 	null RATING_LEVEL3,
-
 
 	(
 		SELECT
@@ -579,24 +500,6 @@ SELECT
 
 *******************/
 --TOTAL_PLEDGE_PAYMENTS1
-/*
-	(cb.elcn_totalpledges - cb.elcn_TotalPledgesOutstanding) Total_Lifetime_Pladge_Payments, --Total Lifetime Pladge Payments
-
-	(
-		SELECT
-			SUM(elcn_RecognitionCredit)
-		FROM
-			elcn_contributiondonorBase
-			JOIN elcn_contribution  
-				ON elcn_contributiondonorBase.elcn_contribution = elcn_contribution.elcn_contributionId
-		WHERE
-			elcn_contributiondonorBase.elcn_person = cb.ContactId
-			AND elcn_contribution.statuscode = 1
-			AND elcn_contribution.elcn_contributionType IN (344220001) -- Pledge
-			--and elcn_contributiondonorBase.elcn_ContributionDate BETWEEN @p_StartDate AND @p_EndDate
-	) Pledges_For_Period,
-
-*/
 	(
 		SELECT
 			SUM(elcn_contributionBase.elcn_Amount)
@@ -629,7 +532,6 @@ SELECT
 			--AND elcn_contributiondonorBase.elcn_ContributionDate BETWEEN @p_StartDate AND @p_EndDate
 			AND elcn_contributiondonorBase.elcn_AssociationTypeId = '36FA0E30-6248-E411-941F-0050568068B8' -- Primary only, If incl Spouse, would need to include Group/Joint
 	) Total_Pledge_Payments, --Total Pledge Payments
-
 
 -- LIFE_TOTAL_GIVING
 	cb.elcn_totalGiving Lifetime_Giving,
@@ -761,20 +663,6 @@ LIFETIME_HOUSEHOLD_GIVING -- Householding tools in CRM 3.0
 	edu_3.Major AS Degree3_Major,--MAJOR_DESC_3
 	edu_3.Degree_Year Degree3_Degree_Year, --DEGREE_YEAR_3
 
-
-
---edu_1.Academic_Level AS Degree1_Academic_Level,
---edu_2.Academic_Level AS Degree2_Academic_Level,
---edu_3.Academic_Level AS Degree3_Academic_Level,
-
---edu_1.College AS Degree1_College,
---edu_2.College AS Degree2_College,
---edu_3.College AS Degree3_College,
-
---edu_1.Academic_Program AS Degree1_Acadmic_Program,
---edu_2.Academic_Program AS Degree2_Acadmic_Program,
---edu_3.Academic_Program AS Degree3_Acadmic_Program
-
 /* APRPROS not in mapping spreadsheet
 SPEC_PURPOSE_TYPE -- place of work 
 SPEC_PURPOSE_TYPE_DESC
@@ -785,31 +673,10 @@ SPEC_PURPOSE_GROUP_DESC
 	elcn_JobTitle POSITION,
 	elcn_BusinessRelationshipStatusIdName Status,
 
-
 --VETERAN_IND
 --GURIDEN_DESC
 	activities.alist ACTIVITIES
 
-/*
-
-
-
-
-
-cb.SpousesName as Spouse_Name,
-
-spouse_p.elcn_PrimaryID AS Constituent_Spouse_Primary_ID,
-
-
-
-(SELECT e.elcn_email FROM elcn_emailaddressBase e where e.elcn_emailaddressId = cb.elcn_preferredemailaddress) AS Preferred_Email_Address,
-
-
-
-
-
-*/
---select *
 FROM(
 	SELECT
 		contactbase.*,
@@ -869,7 +736,6 @@ LEFT OUTER JOIN #temp_education edu_3 on edu_3.elcn_PersonId = cb.ContactID and 
 		FROM
 			#temp_aprsalu salu
 		WHERE
-			--cb.contactid = salu.elcn_personid 
 			salu.salu_code = 'CIFE'
 		) CIFE_SALU ON cb.contactid = cife_salu.elcn_personid
 	LEFT JOIN(
@@ -879,7 +745,6 @@ LEFT OUTER JOIN #temp_education edu_3 on edu_3.elcn_PersonId = cb.ContactID and 
 		FROM
 			#temp_aprsalu salu
 		WHERE
-			--cb.contactid = salu.elcn_personid 
 			salu.salu_code = 'SIFE'
 		) SIFE_SALU ON cb.contactid = sife_salu.elcn_personid
 	LEFT JOIN(
@@ -889,7 +754,6 @@ LEFT OUTER JOIN #temp_education edu_3 on edu_3.elcn_PersonId = cb.ContactID and 
 		FROM
 			#temp_aprsalu salu
 		WHERE
-			--cb.contactid = salu.elcn_personid 
 			salu.salu_code = 'CIFL'
 		) CIFL_SALU ON cb.contactid = cifl_salu.elcn_personid
 	LEFT JOIN(
@@ -899,7 +763,6 @@ LEFT OUTER JOIN #temp_education edu_3 on edu_3.elcn_PersonId = cb.ContactID and 
 		FROM
 			#temp_aprsalu salu
 		WHERE
-			--cb.contactid = salu.elcn_personid 
 			salu.salu_code = 'SIFL'
 		) SIFL_SALU ON cb.contactid = sifl_salu.elcn_personid
 
@@ -1015,8 +878,8 @@ LEFT OUTER JOIN #temp_education edu_3 on edu_3.elcn_PersonId = cb.ContactID and 
 
 	LEFT JOIN(
 		SELECT
-			elcn_personid, --guid 
-			elcn_phonenumber, --phone number
+			elcn_personid, 
+			elcn_phonenumber, 
 			elcn_type , -- 'Home' etc
 			elcn_preferred -- 0/1
 		FROM
@@ -1027,10 +890,10 @@ LEFT OUTER JOIN #temp_education edu_3 on edu_3.elcn_PersonId = cb.ContactID and 
 
 	LEFT JOIN(
 		SELECT
-			elcn_personid, --guid 
-			elcn_phonenumber, --phone number
-			elcn_type , -- 'Home' etc
-			elcn_preferred -- 0/1
+			elcn_personid,
+			elcn_phonenumber, 
+			elcn_type ,
+			elcn_preferred 
 		FROM
 			#temp_phone
 		WHERE
@@ -1039,10 +902,10 @@ LEFT OUTER JOIN #temp_education edu_3 on edu_3.elcn_PersonId = cb.ContactID and 
 
 	LEFT JOIN(
 		SELECT
-			elcn_personid, --guid 
-			elcn_phonenumber, --phone number
-			elcn_type , -- 'Home' etc
-			elcn_preferred -- 0/1
+			elcn_personid, 
+			elcn_phonenumber,
+			elcn_type , 
+			elcn_preferred 
 		FROM
 			#temp_phone
 		WHERE
@@ -1054,8 +917,7 @@ LEFT OUTER JOIN #temp_education edu_3 on edu_3.elcn_PersonId = cb.ContactID and 
 			prb.elcn_person1id,
 			prt.elcn_type,
 			contactbase.fullname,
-			elcn_JointMailing
-			
+			elcn_JointMailing			
 		FROM
 			elcn_personalrelationshipBase prb
 			LEFT JOIN elcn_personalrelationshiptype prt on elcn_RelationshipType1Id  = elcn_personalrelationshiptypeid 
@@ -1074,7 +936,6 @@ LEFT OUTER JOIN #temp_education edu_3 on edu_3.elcn_PersonId = cb.ContactID and 
 			elcn_businessrelationship
 		WHERE
 			statuscode =1
-			--AND elcn_BusinessRelationshipStatusIdName limit?
 	)JOB ON cb.contactid = job.elcn_personid 
 	LEFT JOIN(
 		SELECT
@@ -1085,13 +946,7 @@ LEFT OUTER JOIN #temp_education edu_3 on edu_3.elcn_PersonId = cb.ContactID and 
 			JOIN elcn_statusbase sb 
 				ON ib.elcn_InvolvementStatusId = sb.elcn_statusid
 		GROUP BY elcn_personid
-	)ACTIVITIES ON cb.contactid = activities.elcn_personid 
-
-			
+	)ACTIVITIES ON cb.contactid = activities.elcn_personid 		
 WHERE
 cb.statuscode =1
---and cb.fullname like 'Robert C Sanders'
---and cb.datatel_EnterpriseSystemId in ( 'N00156288', 'N00142649') --'N00018518'
---EF350F86-1561-47D1-85ED-FC295CBDD9C5
 ;
---select * from #temp_email_slot where elcn_personid = 'E9397505-12EC-42DD-94D3-DC5F3E089E80';

@@ -738,3 +738,20 @@ select count(*) from ContactBase --105850
 
 
 
+UPDATE su
+
+SET su.domainname = 'sql\nsudevuser'
+
+SELECT su.domainname, su.fullname
+--select * 
+FROM systemuserbase su
+order by 1
+WHERE su.domainname = 'willi204@nsuok.edu'
+
+update su
+set su.domainname = 'sql\nsudevuser'
+--select su.domainname, su.fullname
+from systemuserbase su
+where su.domainname = 'turnerm@nsuok.edu'
+;
+select * from INFORMATION_SCHEMA.Tables where table_name like 'Filtered%';

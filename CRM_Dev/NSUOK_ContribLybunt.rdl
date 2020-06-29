@@ -1,0 +1,1272 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Report xmlns="http://schemas.microsoft.com/sqlserver/reporting/2016/01/reportdefinition" xmlns:rd="http://schemas.microsoft.com/SQLServer/reporting/reportdesigner">
+  <AutoRefresh>0</AutoRefresh>
+  <DataSources>
+    <DataSource Name="MSCRM_DataSource">
+      <DataSourceReference>MSCRM_DataSource</DataSourceReference>
+      <rd:SecurityType>Integrated</rd:SecurityType>
+      <rd:DataSourceID>3c4d75a8-9531-4849-bc1f-67b0be7ace9c</rd:DataSourceID>
+    </DataSource>
+  </DataSources>
+  <DataSets>
+    <DataSet Name="OrganizationDataSet">
+      <Query>
+        <DataSourceName>MSCRM_DataSource</DataSourceName>
+        <CommandText>SELECT        name
+FROM            FilteredOrganization</CommandText>
+      </Query>
+      <Fields>
+        <Field Name="name">
+          <DataField>name</DataField>
+          <rd:TypeName>System.String</rd:TypeName>
+        </Field>
+      </Fields>
+    </DataSet>
+    <DataSet Name="DataSet1">
+      <Query>
+        <DataSourceName>MSCRM_DataSource</DataSourceName>
+        <QueryParameters>
+          <QueryParameter Name="@p_asofdate">
+            <Value>=Parameters!p_asofdate.Value</Value>
+          </QueryParameter>
+          <QueryParameter Name="@p_contributiontype">
+            <Value>=Parameters!p_contributiontype.Value</Value>
+          </QueryParameter>
+        </QueryParameters>
+        <CommandText>DECLARE @p_fiscalmonth INT
+DECLARE @lv_curr_fy [nvarchar](4)
+DECLARE @lv_prev1_fy  [nvarchar](4)
+DECLARE @lv_prev2_fy  [nvarchar](4)
+DECLARE @lv_calendar_year_ind [nvarchar](1)
+
+
+
+--test the query in SQL Server management studio
+--DECLARE @p_asofdate DATETIME
+--SET @p_asofdate = CAST('01-MAR-2020' AS date)
+
+SELECT @p_fiscalmonth = MONTH(fo.fiscalcalendarstart) FROM filteredorganization fo
+;
+SET @lv_calendar_year_ind = 'Y'
+
+IF @lv_calendar_year_ind = 'N'
+BEGIN
+	SET @lv_curr_fy =  CASE WHEN MONTH(@p_asofdate) &gt;= @p_fiscalmonth THEN YEAR(@p_asofdate) + 1  ELSE YEAR(@p_asofdate) END
+	SET @lv_prev1_fy =  CASE WHEN MONTH(@p_asofdate) &gt;= @p_fiscalmonth THEN YEAR(@p_asofdate) + 1 ELSE YEAR(@p_asofdate) END - 1
+	SET @lv_prev2_fy =  CASE WHEN MONTH(@p_asofdate) &gt;= @p_fiscalmonth THEN YEAR(@p_asofdate) + 1  ELSE YEAR(@p_asofdate) END - 2
+END
+ELSE
+BEGIN
+	SET @lv_curr_fy = YEAR(@p_asofdate)  
+	SET @lv_prev1_fy = YEAR(@p_asofdate) - 1 
+	SET @lv_prev2_fy = YEAR(@p_asofdate) - 2 
+END
+;
+--SELECT @p_fiscalmonth, @lv_curr_fy, @lv_prev1_fy, @lv_prev2_fy
+
+
+
+
+--	NDN - No Donation Solicitations
+SELECT *
+INTO #tmp_exclusions
+FROM
+(
+		SELECT cpb.elcn_personid, cpb.elcn_organizationid, 'NDN' exclusion_type 
+		FROM elcn_contactpreferenceBase cpb
+		WHERE cpb.elcn_ContactPreferenceTypeId = 'e4e02dc6-3314-e511-9431-005056804b43' /*Solicitations*/
+		AND cpb.elcn_ContactRestrictionId = '8872A718-5472-40C4-82C7-DB72FC4CE5A6' /*Exclude*/
+		AND (cpb.elcn_RestrictionLiftDate &lt; CURRENT_TIMESTAMP OR cpb.elcn_RestrictionLiftDate IS NULL)
+		AND cpb.elcn_ContactPreferenceStatusId = '378DE114-EB09-E511-943C-0050568068B7' /*Current*/
+		AND cpb.elcn_MethodofContact = 344220006 /*All*/
+		
+--	NMC - No Mail Contact
+        UNION ALL
+
+		SELECT cpb.elcn_personid, cpb.elcn_organizationid, 'NMC' exclusion_type 
+		FROM elcn_contactpreferenceBase cpb
+		WHERE cpb.elcn_ContactPreferenceTypeId = '112A7585-A2D9-E911-80D8-0A253F89019C' /*Communications*/
+		AND cpb.elcn_ContactRestrictionId = '8872A718-5472-40C4-82C7-DB72FC4CE5A6' /*Exclude*/
+		AND (cpb.elcn_RestrictionLiftDate &lt; CURRENT_TIMESTAMP OR cpb.elcn_RestrictionLiftDate IS NULL)
+		AND cpb.elcn_ContactPreferenceStatusId = '378DE114-EB09-E511-943C-0050568068B7' /*Current*/
+		AND cpb.elcn_MethodofContact = 344220000 /*Letter*/
+
+
+--	NOC - No Contact
+
+		UNION ALL
+
+		SELECT cpb.elcn_personid, cpb.elcn_organizationid, 'NOC' exclusion_type 
+		FROM elcn_contactpreferenceBase cpb
+		WHERE cpb.elcn_ContactPreferenceTypeId = '76EA8AA5-2F36-4E8E-BFB2-490677DCF4B4' /*Global Restriction*/
+		AND cpb.elcn_ContactRestrictionId = '8872A718-5472-40C4-82C7-DB72FC4CE5A6' /*Exclude*/
+		AND (cpb.elcn_RestrictionLiftDate &lt; CURRENT_TIMESTAMP OR cpb.elcn_RestrictionLiftDate IS NULL)
+		AND cpb.elcn_ContactPreferenceStatusId = '378DE114-EB09-E511-943C-0050568068B7' /*Current*/
+		AND cpb.elcn_MethodofContact = 344220006 /*All*/
+) fq
+;
+
+CREATE NONCLUSTERED INDEX tmp_exclusions_idx1 ON #tmp_exclusions(elcn_personid);
+CREATE NONCLUSTERED INDEX tmp_exclusions_idx2 ON #tmp_exclusions(elcn_organizationid);
+
+
+
+
+--LYBUNT LOGIC
+SELECT *
+INTO #tmp_lybunt_conributiondonors
+FROM 
+(
+SELECT fecd.elcn_person elcn_personid, NULL elcn_organizationid, 'P' AS person_or_org_ind, elcn_associationtypeidname, elcn_designationname, fecd.elcn_contributiondateutc, fecd.elcn_amount, elcn_recognitioncredit
+
+FROM filteredelcn_contributiondonor fecd
+INNER JOIN filteredelcn_contribution fec ON fec.elcn_contributionid = fecd.elcn_contribution
+WHERE fecd.statuscode = 1
+AND fec.elcn_fiscalyear = @lv_prev1_fy
+AND fecd.elcn_person IS NOT NULL
+AND fec.elcn_contributiontypename IN (@p_contributiontype)
+AND NOT EXISTS (SELECT 'Y'
+                FROM filteredelcn_contributiondonor fecd2
+				WHERE fecd2.elcn_person = fecd.elcn_person
+				AND DATEPART(YEAR,fecd.elcn_contributiondate) = @lv_curr_fy
+				)
+AND NOT EXISTS (SELECT 'Y'
+                FROM #tmp_exclusions tx 
+				WHERE tx.elcn_personid = fecd.elcn_person
+				)
+
+UNION ALL
+
+SELECT NULL elcn_personid, elcn_organization elcn_organizationid, 'O' AS person_or_org_ind, elcn_associationtypeidname, elcn_designationname, fecd.elcn_contributiondateutc, fecd.elcn_amount, elcn_recognitioncredit
+
+FROM filteredelcn_contributiondonor fecd
+INNER JOIN filteredelcn_contribution fec ON fec.elcn_contributionid = fecd.elcn_contribution
+WHERE fecd.statuscode = 1
+AND fec.elcn_fiscalyear = @lv_prev1_fy
+AND fecd.elcn_organization IS NOT NULL
+AND NOT EXISTS (SELECT 'Y'
+                FROM filteredelcn_contributiondonor fecd2
+				WHERE fecd2.elcn_organization = fecd.elcn_organization
+				AND DATEPART(YEAR,fecd.elcn_contributiondate) = @lv_curr_fy
+				)
+AND NOT EXISTS (SELECT 'Y'
+                FROM #tmp_exclusions tx 
+				WHERE tx.elcn_OrganizationId = fecd.elcn_organization
+				)
+) fq
+;
+
+CREATE NONCLUSTERED INDEX tmp_lybunt_contributiondonors_idx1 ON #tmp_lybunt_conributiondonors(elcn_personid);
+CREATE NONCLUSTERED INDEX tmp_lybunt_contributiondonors_idx2 ON #tmp_lybunt_conributiondonors(elcn_organizationid);
+
+
+SELECT tlc.*
+, CRMAF_filteredcontact.fullname
+, CRMAF_filteredcontact.elcn_primaryID
+, CRMAF_filteredcontact.elcn_primaryconstituentaffiliationidname
+, CRMAF_filteredcontact.address1_addresstypecodename
+, CRMAF_filteredcontact.address1_line1
+, CRMAF_filteredcontact.address1_line2
+, CRMAF_filteredcontact.address1_city
+, CRMAF_filteredcontact.address1_stateorprovince
+FROM  #tmp_lybunt_conributiondonors tlc
+INNER JOIN filteredcontact CRMAF_filteredcontact ON tlc.elcn_personid = CRMAF_filteredcontact.contactid
+
+UNION ALL
+
+SELECT tlc.*
+, CRMAF_filteredaccount.name
+, CRMAF_filteredaccount.elcn_primaryID
+, CRMAF_filteredaccount.elcn_primaryconstituentaffiliationidname
+, CRMAF_filteredaccount.address1_addresstypecodename
+, CRMAF_filteredaccount.address1_line1
+, CRMAF_filteredaccount.address1_line2
+, CRMAF_filteredaccount.address1_city
+, CRMAF_filteredaccount.address1_stateorprovince
+FROM  #tmp_lybunt_conributiondonors tlc
+INNER JOIN filteredaccount CRMAF_filteredaccount ON tlc.elcn_organizationid = CRMAF_filteredaccount.accountid
+
+</CommandText>
+      </Query>
+      <Fields>
+        <Field Name="elcn_personid">
+          <DataField>elcn_personid</DataField>
+          <rd:TypeName>System.Guid</rd:TypeName>
+        </Field>
+        <Field Name="fullname">
+          <DataField>fullname</DataField>
+          <rd:TypeName>System.String</rd:TypeName>
+        </Field>
+        <Field Name="elcn_organizationid">
+          <DataField>elcn_organizationid</DataField>
+          <rd:TypeName>System.Guid</rd:TypeName>
+        </Field>
+        <Field Name="elcn_primaryconstituentaffiliationidname">
+          <DataField>elcn_primaryconstituentaffiliationidname</DataField>
+          <rd:TypeName>System.String</rd:TypeName>
+        </Field>
+        <Field Name="person_or_org_ind">
+          <DataField>person_or_org_ind</DataField>
+          <rd:TypeName>System.String</rd:TypeName>
+        </Field>
+        <Field Name="address1_addresstypecodename">
+          <DataField>address1_addresstypecodename</DataField>
+          <rd:TypeName>System.String</rd:TypeName>
+        </Field>
+        <Field Name="elcn_associationtypeidname">
+          <DataField>elcn_associationtypeidname</DataField>
+          <rd:TypeName>System.String</rd:TypeName>
+        </Field>
+        <Field Name="address1_line1">
+          <DataField>address1_line1</DataField>
+          <rd:TypeName>System.String</rd:TypeName>
+        </Field>
+        <Field Name="elcn_designationname">
+          <DataField>elcn_designationname</DataField>
+          <rd:TypeName>System.String</rd:TypeName>
+        </Field>
+        <Field Name="elcn_primaryID">
+          <DataField>elcn_primaryID</DataField>
+          <rd:TypeName>System.String</rd:TypeName>
+        </Field>
+        <Field Name="address1_line2">
+          <DataField>address1_line2</DataField>
+          <rd:TypeName>System.String</rd:TypeName>
+        </Field>
+        <Field Name="elcn_contributiondateutc">
+          <DataField>elcn_contributiondateutc</DataField>
+          <rd:TypeName>System.DateTime</rd:TypeName>
+        </Field>
+        <Field Name="address1_city">
+          <DataField>address1_city</DataField>
+          <rd:TypeName>System.String</rd:TypeName>
+        </Field>
+        <Field Name="address1_stateorprovince">
+          <DataField>address1_stateorprovince</DataField>
+          <rd:TypeName>System.String</rd:TypeName>
+        </Field>
+        <Field Name="elcn_amount">
+          <DataField>elcn_amount</DataField>
+          <rd:TypeName>System.Decimal</rd:TypeName>
+        </Field>
+        <Field Name="elcn_recognitioncredit">
+          <DataField>elcn_recognitioncredit</DataField>
+          <rd:TypeName>System.Decimal</rd:TypeName>
+        </Field>
+      </Fields>
+    </DataSet>
+    <DataSet Name="today_ds">
+      <Query>
+        <DataSourceName>MSCRM_DataSource</DataSourceName>
+        <CommandText>SELECT getdate() today</CommandText>
+      </Query>
+      <Fields>
+        <Field Name="today">
+          <DataField>today</DataField>
+          <rd:TypeName>System.DateTime</rd:TypeName>
+        </Field>
+      </Fields>
+    </DataSet>
+    <DataSet Name="contributiontype_ds">
+      <Query>
+        <DataSourceName>MSCRM_DataSource</DataSourceName>
+        <CommandText>SELECT value
+FROM FilteredStringMap
+where attributename = 'elcn_contributiontype'
+AND filteredviewname = 'Filteredelcn_contribution'
+</CommandText>
+      </Query>
+      <Fields>
+        <Field Name="value">
+          <DataField>value</DataField>
+          <rd:TypeName>System.String</rd:TypeName>
+        </Field>
+      </Fields>
+    </DataSet>
+  </DataSets>
+  <ReportSections>
+    <ReportSection>
+      <Body>
+        <ReportItems>
+          <Tablix Name="Tablix1">
+            <TablixBody>
+              <TablixColumns>
+                <TablixColumn>
+                  <Width>1.31375in</Width>
+                </TablixColumn>
+                <TablixColumn>
+                  <Width>1in</Width>
+                </TablixColumn>
+                <TablixColumn>
+                  <Width>1in</Width>
+                </TablixColumn>
+                <TablixColumn>
+                  <Width>1.22917in</Width>
+                </TablixColumn>
+                <TablixColumn>
+                  <Width>1in</Width>
+                </TablixColumn>
+                <TablixColumn>
+                  <Width>1in</Width>
+                </TablixColumn>
+                <TablixColumn>
+                  <Width>1in</Width>
+                </TablixColumn>
+                <TablixColumn>
+                  <Width>1in</Width>
+                </TablixColumn>
+                <TablixColumn>
+                  <Width>1in</Width>
+                </TablixColumn>
+              </TablixColumns>
+              <TablixRows>
+                <TablixRow>
+                  <Height>0.41667in</Height>
+                  <TablixCells>
+                    <TablixCell>
+                      <CellContents>
+                        <Textbox Name="Textbox1">
+                          <CanGrow>true</CanGrow>
+                          <KeepTogether>true</KeepTogether>
+                          <Paragraphs>
+                            <Paragraph>
+                              <TextRuns>
+                                <TextRun>
+                                  <Value>Fullname</Value>
+                                  <Style>
+                                    <FontWeight>Bold</FontWeight>
+                                  </Style>
+                                </TextRun>
+                              </TextRuns>
+                              <Style />
+                            </Paragraph>
+                          </Paragraphs>
+                          <rd:DefaultName>Textbox1</rd:DefaultName>
+                          <Style>
+                            <Border>
+                              <Color>LightGrey</Color>
+                              <Style>Solid</Style>
+                            </Border>
+                            <PaddingLeft>2pt</PaddingLeft>
+                            <PaddingRight>2pt</PaddingRight>
+                            <PaddingTop>2pt</PaddingTop>
+                            <PaddingBottom>2pt</PaddingBottom>
+                          </Style>
+                        </Textbox>
+                      </CellContents>
+                    </TablixCell>
+                    <TablixCell>
+                      <CellContents>
+                        <Textbox Name="Textbox18">
+                          <CanGrow>true</CanGrow>
+                          <KeepTogether>true</KeepTogether>
+                          <Paragraphs>
+                            <Paragraph>
+                              <TextRuns>
+                                <TextRun>
+                                  <Value>Primary ID</Value>
+                                  <Style>
+                                    <FontWeight>Bold</FontWeight>
+                                  </Style>
+                                </TextRun>
+                              </TextRuns>
+                              <Style />
+                            </Paragraph>
+                          </Paragraphs>
+                          <rd:DefaultName>Textbox18</rd:DefaultName>
+                          <Style>
+                            <Border>
+                              <Color>LightGrey</Color>
+                              <Style>Solid</Style>
+                            </Border>
+                            <PaddingLeft>2pt</PaddingLeft>
+                            <PaddingRight>2pt</PaddingRight>
+                            <PaddingTop>2pt</PaddingTop>
+                            <PaddingBottom>2pt</PaddingBottom>
+                          </Style>
+                        </Textbox>
+                      </CellContents>
+                    </TablixCell>
+                    <TablixCell>
+                      <CellContents>
+                        <Textbox Name="Textbox7">
+                          <CanGrow>true</CanGrow>
+                          <KeepTogether>true</KeepTogether>
+                          <Paragraphs>
+                            <Paragraph>
+                              <TextRuns>
+                                <TextRun>
+                                  <Value>Constituent Type</Value>
+                                  <Style>
+                                    <FontWeight>Bold</FontWeight>
+                                  </Style>
+                                </TextRun>
+                              </TextRuns>
+                              <Style />
+                            </Paragraph>
+                          </Paragraphs>
+                          <rd:DefaultName>Textbox7</rd:DefaultName>
+                          <Style>
+                            <Border>
+                              <Color>LightGrey</Color>
+                              <Style>Solid</Style>
+                            </Border>
+                            <PaddingLeft>2pt</PaddingLeft>
+                            <PaddingRight>2pt</PaddingRight>
+                            <PaddingTop>2pt</PaddingTop>
+                            <PaddingBottom>2pt</PaddingBottom>
+                          </Style>
+                        </Textbox>
+                      </CellContents>
+                    </TablixCell>
+                    <TablixCell>
+                      <CellContents>
+                        <Textbox Name="Textbox9">
+                          <CanGrow>true</CanGrow>
+                          <KeepTogether>true</KeepTogether>
+                          <Paragraphs>
+                            <Paragraph>
+                              <TextRuns>
+                                <TextRun>
+                                  <Value>Address1 line1</Value>
+                                  <Style>
+                                    <FontWeight>Bold</FontWeight>
+                                  </Style>
+                                </TextRun>
+                              </TextRuns>
+                              <Style />
+                            </Paragraph>
+                          </Paragraphs>
+                          <rd:DefaultName>Textbox9</rd:DefaultName>
+                          <Style>
+                            <Border>
+                              <Color>LightGrey</Color>
+                              <Style>Solid</Style>
+                            </Border>
+                            <PaddingLeft>2pt</PaddingLeft>
+                            <PaddingRight>2pt</PaddingRight>
+                            <PaddingTop>2pt</PaddingTop>
+                            <PaddingBottom>2pt</PaddingBottom>
+                          </Style>
+                        </Textbox>
+                      </CellContents>
+                    </TablixCell>
+                    <TablixCell>
+                      <CellContents>
+                        <Textbox Name="Textbox3">
+                          <CanGrow>true</CanGrow>
+                          <KeepTogether>true</KeepTogether>
+                          <Paragraphs>
+                            <Paragraph>
+                              <TextRuns>
+                                <TextRun>
+                                  <Value>Address1 line2</Value>
+                                  <Style>
+                                    <FontWeight>Bold</FontWeight>
+                                  </Style>
+                                </TextRun>
+                              </TextRuns>
+                              <Style />
+                            </Paragraph>
+                          </Paragraphs>
+                          <rd:DefaultName>Textbox3</rd:DefaultName>
+                          <Style>
+                            <Border>
+                              <Color>LightGrey</Color>
+                              <Style>Solid</Style>
+                            </Border>
+                            <PaddingLeft>2pt</PaddingLeft>
+                            <PaddingRight>2pt</PaddingRight>
+                            <PaddingTop>2pt</PaddingTop>
+                            <PaddingBottom>2pt</PaddingBottom>
+                          </Style>
+                        </Textbox>
+                      </CellContents>
+                    </TablixCell>
+                    <TablixCell>
+                      <CellContents>
+                        <Textbox Name="Textbox11">
+                          <CanGrow>true</CanGrow>
+                          <KeepTogether>true</KeepTogether>
+                          <Paragraphs>
+                            <Paragraph>
+                              <TextRuns>
+                                <TextRun>
+                                  <Value>Address1 city</Value>
+                                  <Style>
+                                    <FontWeight>Bold</FontWeight>
+                                  </Style>
+                                </TextRun>
+                              </TextRuns>
+                              <Style />
+                            </Paragraph>
+                          </Paragraphs>
+                          <rd:DefaultName>Textbox11</rd:DefaultName>
+                          <Style>
+                            <Border>
+                              <Color>LightGrey</Color>
+                              <Style>Solid</Style>
+                            </Border>
+                            <PaddingLeft>2pt</PaddingLeft>
+                            <PaddingRight>2pt</PaddingRight>
+                            <PaddingTop>2pt</PaddingTop>
+                            <PaddingBottom>2pt</PaddingBottom>
+                          </Style>
+                        </Textbox>
+                      </CellContents>
+                    </TablixCell>
+                    <TablixCell>
+                      <CellContents>
+                        <Textbox Name="Textbox5">
+                          <CanGrow>true</CanGrow>
+                          <KeepTogether>true</KeepTogether>
+                          <Paragraphs>
+                            <Paragraph>
+                              <TextRuns>
+                                <TextRun>
+                                  <Value>State Province</Value>
+                                  <Style>
+                                    <FontWeight>Bold</FontWeight>
+                                  </Style>
+                                </TextRun>
+                              </TextRuns>
+                              <Style />
+                            </Paragraph>
+                          </Paragraphs>
+                          <rd:DefaultName>Textbox5</rd:DefaultName>
+                          <Style>
+                            <Border>
+                              <Color>LightGrey</Color>
+                              <Style>Solid</Style>
+                            </Border>
+                            <PaddingLeft>2pt</PaddingLeft>
+                            <PaddingRight>2pt</PaddingRight>
+                            <PaddingTop>2pt</PaddingTop>
+                            <PaddingBottom>2pt</PaddingBottom>
+                          </Style>
+                        </Textbox>
+                      </CellContents>
+                    </TablixCell>
+                    <TablixCell>
+                      <CellContents>
+                        <Textbox Name="Textbox13">
+                          <CanGrow>true</CanGrow>
+                          <KeepTogether>true</KeepTogether>
+                          <Paragraphs>
+                            <Paragraph>
+                              <TextRuns>
+                                <TextRun>
+                                  <Value>Amount</Value>
+                                  <Style>
+                                    <FontWeight>Bold</FontWeight>
+                                  </Style>
+                                </TextRun>
+                              </TextRuns>
+                              <Style />
+                            </Paragraph>
+                          </Paragraphs>
+                          <rd:DefaultName>Textbox13</rd:DefaultName>
+                          <Style>
+                            <Border>
+                              <Color>LightGrey</Color>
+                              <Style>Solid</Style>
+                            </Border>
+                            <PaddingLeft>2pt</PaddingLeft>
+                            <PaddingRight>2pt</PaddingRight>
+                            <PaddingTop>2pt</PaddingTop>
+                            <PaddingBottom>2pt</PaddingBottom>
+                          </Style>
+                        </Textbox>
+                      </CellContents>
+                    </TablixCell>
+                    <TablixCell>
+                      <CellContents>
+                        <Textbox Name="Textbox16">
+                          <CanGrow>true</CanGrow>
+                          <KeepTogether>true</KeepTogether>
+                          <Paragraphs>
+                            <Paragraph>
+                              <TextRuns>
+                                <TextRun>
+                                  <Value>Recognition</Value>
+                                  <Style>
+                                    <FontWeight>Bold</FontWeight>
+                                  </Style>
+                                </TextRun>
+                              </TextRuns>
+                              <Style />
+                            </Paragraph>
+                          </Paragraphs>
+                          <rd:DefaultName>Textbox16</rd:DefaultName>
+                          <Style>
+                            <Border>
+                              <Color>LightGrey</Color>
+                              <Style>Solid</Style>
+                            </Border>
+                            <PaddingLeft>2pt</PaddingLeft>
+                            <PaddingRight>2pt</PaddingRight>
+                            <PaddingTop>2pt</PaddingTop>
+                            <PaddingBottom>2pt</PaddingBottom>
+                          </Style>
+                        </Textbox>
+                      </CellContents>
+                    </TablixCell>
+                  </TablixCells>
+                </TablixRow>
+                <TablixRow>
+                  <Height>0.25in</Height>
+                  <TablixCells>
+                    <TablixCell>
+                      <CellContents>
+                        <Textbox Name="fullname">
+                          <CanGrow>true</CanGrow>
+                          <KeepTogether>true</KeepTogether>
+                          <Paragraphs>
+                            <Paragraph>
+                              <TextRuns>
+                                <TextRun>
+                                  <Value>=Fields!fullname.Value</Value>
+                                  <Style />
+                                </TextRun>
+                              </TextRuns>
+                              <Style />
+                            </Paragraph>
+                          </Paragraphs>
+                          <rd:DefaultName>fullname</rd:DefaultName>
+                          <ActionInfo>
+                            <Actions>
+                              <Action>
+                                <Hyperlink>=iif(Fields!person_or_org_ind.Value="P",
+     Parameters!CRM_URL.Value &amp; "?ID={"&amp;Fields!elcn_personid.Value.ToString()&amp;"}&amp;LogicalName=contact"
+   , Parameters!CRM_URL.Value &amp; "?ID={"&amp;Fields!elcn_organizationid.Value.ToString()&amp;"}&amp;LogicalName=account"
+    )</Hyperlink>
+                              </Action>
+                            </Actions>
+                          </ActionInfo>
+                          <Style>
+                            <Border>
+                              <Color>LightGrey</Color>
+                              <Style>Solid</Style>
+                            </Border>
+                            <PaddingLeft>2pt</PaddingLeft>
+                            <PaddingRight>2pt</PaddingRight>
+                            <PaddingTop>2pt</PaddingTop>
+                            <PaddingBottom>2pt</PaddingBottom>
+                          </Style>
+                        </Textbox>
+                      </CellContents>
+                    </TablixCell>
+                    <TablixCell>
+                      <CellContents>
+                        <Textbox Name="elcn_primaryID">
+                          <CanGrow>true</CanGrow>
+                          <KeepTogether>true</KeepTogether>
+                          <Paragraphs>
+                            <Paragraph>
+                              <TextRuns>
+                                <TextRun>
+                                  <Value>=Fields!elcn_primaryID.Value</Value>
+                                  <Style />
+                                </TextRun>
+                              </TextRuns>
+                              <Style />
+                            </Paragraph>
+                          </Paragraphs>
+                          <rd:DefaultName>elcn_primaryID</rd:DefaultName>
+                          <Style>
+                            <Border>
+                              <Color>LightGrey</Color>
+                              <Style>Solid</Style>
+                            </Border>
+                            <PaddingLeft>2pt</PaddingLeft>
+                            <PaddingRight>2pt</PaddingRight>
+                            <PaddingTop>2pt</PaddingTop>
+                            <PaddingBottom>2pt</PaddingBottom>
+                          </Style>
+                        </Textbox>
+                      </CellContents>
+                    </TablixCell>
+                    <TablixCell>
+                      <CellContents>
+                        <Textbox Name="elcn_primaryconstituentaffiliationidname">
+                          <CanGrow>true</CanGrow>
+                          <KeepTogether>true</KeepTogether>
+                          <Paragraphs>
+                            <Paragraph>
+                              <TextRuns>
+                                <TextRun>
+                                  <Value>=Fields!elcn_primaryconstituentaffiliationidname.Value</Value>
+                                  <Style />
+                                </TextRun>
+                              </TextRuns>
+                              <Style />
+                            </Paragraph>
+                          </Paragraphs>
+                          <rd:DefaultName>elcn_primaryconstituentaffiliationidname</rd:DefaultName>
+                          <Style>
+                            <Border>
+                              <Color>LightGrey</Color>
+                              <Style>Solid</Style>
+                            </Border>
+                            <PaddingLeft>2pt</PaddingLeft>
+                            <PaddingRight>2pt</PaddingRight>
+                            <PaddingTop>2pt</PaddingTop>
+                            <PaddingBottom>2pt</PaddingBottom>
+                          </Style>
+                        </Textbox>
+                      </CellContents>
+                    </TablixCell>
+                    <TablixCell>
+                      <CellContents>
+                        <Textbox Name="address1_line1">
+                          <CanGrow>true</CanGrow>
+                          <KeepTogether>true</KeepTogether>
+                          <Paragraphs>
+                            <Paragraph>
+                              <TextRuns>
+                                <TextRun>
+                                  <Value>=Fields!address1_line1.Value</Value>
+                                  <Style />
+                                </TextRun>
+                              </TextRuns>
+                              <Style />
+                            </Paragraph>
+                          </Paragraphs>
+                          <rd:DefaultName>address1_line1</rd:DefaultName>
+                          <Style>
+                            <Border>
+                              <Color>LightGrey</Color>
+                              <Style>Solid</Style>
+                            </Border>
+                            <PaddingLeft>2pt</PaddingLeft>
+                            <PaddingRight>2pt</PaddingRight>
+                            <PaddingTop>2pt</PaddingTop>
+                            <PaddingBottom>2pt</PaddingBottom>
+                          </Style>
+                        </Textbox>
+                      </CellContents>
+                    </TablixCell>
+                    <TablixCell>
+                      <CellContents>
+                        <Textbox Name="address1_line2">
+                          <CanGrow>true</CanGrow>
+                          <KeepTogether>true</KeepTogether>
+                          <Paragraphs>
+                            <Paragraph>
+                              <TextRuns>
+                                <TextRun>
+                                  <Value>=Fields!address1_line2.Value</Value>
+                                  <Style />
+                                </TextRun>
+                              </TextRuns>
+                              <Style />
+                            </Paragraph>
+                          </Paragraphs>
+                          <rd:DefaultName>address1_line2</rd:DefaultName>
+                          <Style>
+                            <Border>
+                              <Color>LightGrey</Color>
+                              <Style>Solid</Style>
+                            </Border>
+                            <PaddingLeft>2pt</PaddingLeft>
+                            <PaddingRight>2pt</PaddingRight>
+                            <PaddingTop>2pt</PaddingTop>
+                            <PaddingBottom>2pt</PaddingBottom>
+                          </Style>
+                        </Textbox>
+                      </CellContents>
+                    </TablixCell>
+                    <TablixCell>
+                      <CellContents>
+                        <Textbox Name="address1_city">
+                          <CanGrow>true</CanGrow>
+                          <KeepTogether>true</KeepTogether>
+                          <Paragraphs>
+                            <Paragraph>
+                              <TextRuns>
+                                <TextRun>
+                                  <Value>=Fields!address1_city.Value</Value>
+                                  <Style />
+                                </TextRun>
+                              </TextRuns>
+                              <Style />
+                            </Paragraph>
+                          </Paragraphs>
+                          <rd:DefaultName>address1_city</rd:DefaultName>
+                          <Style>
+                            <Border>
+                              <Color>LightGrey</Color>
+                              <Style>Solid</Style>
+                            </Border>
+                            <PaddingLeft>2pt</PaddingLeft>
+                            <PaddingRight>2pt</PaddingRight>
+                            <PaddingTop>2pt</PaddingTop>
+                            <PaddingBottom>2pt</PaddingBottom>
+                          </Style>
+                        </Textbox>
+                      </CellContents>
+                    </TablixCell>
+                    <TablixCell>
+                      <CellContents>
+                        <Textbox Name="address1_stateorprovince">
+                          <CanGrow>true</CanGrow>
+                          <KeepTogether>true</KeepTogether>
+                          <Paragraphs>
+                            <Paragraph>
+                              <TextRuns>
+                                <TextRun>
+                                  <Value>=Fields!address1_stateorprovince.Value</Value>
+                                  <Style />
+                                </TextRun>
+                              </TextRuns>
+                              <Style />
+                            </Paragraph>
+                          </Paragraphs>
+                          <rd:DefaultName>address1_stateorprovince</rd:DefaultName>
+                          <Style>
+                            <Border>
+                              <Color>LightGrey</Color>
+                              <Style>Solid</Style>
+                            </Border>
+                            <PaddingLeft>2pt</PaddingLeft>
+                            <PaddingRight>2pt</PaddingRight>
+                            <PaddingTop>2pt</PaddingTop>
+                            <PaddingBottom>2pt</PaddingBottom>
+                          </Style>
+                        </Textbox>
+                      </CellContents>
+                    </TablixCell>
+                    <TablixCell>
+                      <CellContents>
+                        <Textbox Name="elcn_amount">
+                          <CanGrow>true</CanGrow>
+                          <KeepTogether>true</KeepTogether>
+                          <Paragraphs>
+                            <Paragraph>
+                              <TextRuns>
+                                <TextRun>
+                                  <Value>=Sum(Fields!elcn_amount.Value)</Value>
+                                  <Style />
+                                </TextRun>
+                              </TextRuns>
+                              <Style />
+                            </Paragraph>
+                          </Paragraphs>
+                          <rd:DefaultName>elcn_amount</rd:DefaultName>
+                          <Style>
+                            <Border>
+                              <Color>LightGrey</Color>
+                              <Style>Solid</Style>
+                            </Border>
+                            <PaddingLeft>2pt</PaddingLeft>
+                            <PaddingRight>2pt</PaddingRight>
+                            <PaddingTop>2pt</PaddingTop>
+                            <PaddingBottom>2pt</PaddingBottom>
+                          </Style>
+                        </Textbox>
+                      </CellContents>
+                    </TablixCell>
+                    <TablixCell>
+                      <CellContents>
+                        <Textbox Name="elcn_recognitioncredit">
+                          <CanGrow>true</CanGrow>
+                          <KeepTogether>true</KeepTogether>
+                          <Paragraphs>
+                            <Paragraph>
+                              <TextRuns>
+                                <TextRun>
+                                  <Value>=Sum(Fields!elcn_recognitioncredit.Value)</Value>
+                                  <Style />
+                                </TextRun>
+                              </TextRuns>
+                              <Style />
+                            </Paragraph>
+                          </Paragraphs>
+                          <rd:DefaultName>elcn_recognitioncredit</rd:DefaultName>
+                          <Style>
+                            <Border>
+                              <Color>LightGrey</Color>
+                              <Style>Solid</Style>
+                            </Border>
+                            <PaddingLeft>2pt</PaddingLeft>
+                            <PaddingRight>2pt</PaddingRight>
+                            <PaddingTop>2pt</PaddingTop>
+                            <PaddingBottom>2pt</PaddingBottom>
+                          </Style>
+                        </Textbox>
+                      </CellContents>
+                    </TablixCell>
+                  </TablixCells>
+                </TablixRow>
+              </TablixRows>
+            </TablixBody>
+            <TablixColumnHierarchy>
+              <TablixMembers>
+                <TablixMember />
+                <TablixMember />
+                <TablixMember />
+                <TablixMember />
+                <TablixMember />
+                <TablixMember />
+                <TablixMember />
+                <TablixMember />
+                <TablixMember />
+              </TablixMembers>
+            </TablixColumnHierarchy>
+            <TablixRowHierarchy>
+              <TablixMembers>
+                <TablixMember>
+                  <KeepWithGroup>After</KeepWithGroup>
+                </TablixMember>
+                <TablixMember>
+                  <Group Name="Details">
+                    <GroupExpressions>
+                      <GroupExpression>=Fields!fullname.Value</GroupExpression>
+                    </GroupExpressions>
+                  </Group>
+                </TablixMember>
+              </TablixMembers>
+            </TablixRowHierarchy>
+            <DataSetName>DataSet1</DataSetName>
+            <Top>0.13542in</Top>
+            <Left>0.04042in</Left>
+            <Height>0.66667in</Height>
+            <Width>9.54292in</Width>
+            <Style>
+              <Border>
+                <Style>None</Style>
+              </Border>
+            </Style>
+          </Tablix>
+        </ReportItems>
+        <Height>2in</Height>
+        <Style />
+      </Body>
+      <Width>9.58334in</Width>
+      <Page>
+        <PageHeader>
+          <Height>1.12375in</Height>
+          <PrintOnFirstPage>true</PrintOnFirstPage>
+          <PrintOnLastPage>true</PrintOnLastPage>
+          <ReportItems>
+            <Rectangle Name="Rectangle1">
+              <ReportItems>
+                <Textbox Name="CRM_FilterText">
+                  <CanGrow>true</CanGrow>
+                  <KeepTogether>true</KeepTogether>
+                  <Paragraphs>
+                    <Paragraph>
+                      <TextRuns>
+                        <TextRun>
+                          <Value>=Parameters!CRM_FilterText.Value</Value>
+                          <Style />
+                        </TextRun>
+                      </TextRuns>
+                      <Style />
+                    </Paragraph>
+                  </Paragraphs>
+                  <rd:DefaultName>CRM_FilterText</rd:DefaultName>
+                  <Height>0.34152in</Height>
+                  <Width>8.96516in</Width>
+                  <Style>
+                    <Border>
+                      <Style>None</Style>
+                    </Border>
+                    <PaddingLeft>2pt</PaddingLeft>
+                    <PaddingRight>2pt</PaddingRight>
+                    <PaddingTop>2pt</PaddingTop>
+                    <PaddingBottom>2pt</PaddingBottom>
+                  </Style>
+                </Textbox>
+              </ReportItems>
+              <KeepTogether>true</KeepTogether>
+              <Top>0.74875in</Top>
+              <Left>0.05083in</Left>
+              <Height>0.34152in</Height>
+              <Width>8.96516in</Width>
+              <Style>
+                <Border>
+                  <Style>None</Style>
+                </Border>
+                <BackgroundColor>#d9eae7</BackgroundColor>
+              </Style>
+            </Rectangle>
+            <Image Name="EllucianCrmAdvanceLogoReports">
+              <Source>Embedded</Source>
+              <Value>EllucianCrmAdvanceLogoReports</Value>
+              <Top>0.02431in</Top>
+              <Height>0.33333in</Height>
+              <Width>1.35417in</Width>
+              <ZIndex>1</ZIndex>
+              <ToolTip>Ellucian CRM Advance</ToolTip>
+              <Style>
+                <Border>
+                  <Style>None</Style>
+                </Border>
+              </Style>
+            </Image>
+            <Textbox Name="Textbox14">
+              <CanGrow>true</CanGrow>
+              <KeepTogether>true</KeepTogether>
+              <Paragraphs>
+                <Paragraph>
+                  <TextRuns>
+                    <TextRun>
+                      <Value>Contribution LYBUNT</Value>
+                      <Style>
+                        <FontWeight>Bold</FontWeight>
+                      </Style>
+                    </TextRun>
+                  </TextRuns>
+                  <Style>
+                    <TextAlign>Right</TextAlign>
+                  </Style>
+                </Paragraph>
+              </Paragraphs>
+              <rd:DefaultName>Textbox14</rd:DefaultName>
+              <Top>0.42014in</Top>
+              <Left>4.10975in</Left>
+              <Height>0.25in</Height>
+              <Width>2.84374in</Width>
+              <ZIndex>2</ZIndex>
+              <Style>
+                <Border>
+                  <Style>None</Style>
+                </Border>
+                <PaddingLeft>2pt</PaddingLeft>
+                <PaddingRight>2pt</PaddingRight>
+                <PaddingTop>2pt</PaddingTop>
+                <PaddingBottom>2pt</PaddingBottom>
+              </Style>
+            </Textbox>
+            <Textbox Name="name">
+              <CanGrow>true</CanGrow>
+              <KeepTogether>true</KeepTogether>
+              <Paragraphs>
+                <Paragraph>
+                  <TextRuns>
+                    <TextRun>
+                      <Value>=First(Fields!name.Value, "OrganizationDataSet")</Value>
+                      <Style>
+                        <FontFamily>Segoe UI</FontFamily>
+                      </Style>
+                    </TextRun>
+                  </TextRuns>
+                  <Style>
+                    <TextAlign>Left</TextAlign>
+                  </Style>
+                </Paragraph>
+              </Paragraphs>
+              <rd:DefaultName>name</rd:DefaultName>
+              <Top>0.42014in</Top>
+              <Height>0.25in</Height>
+              <Width>2.61669in</Width>
+              <ZIndex>3</ZIndex>
+              <DataElementOutput>NoOutput</DataElementOutput>
+              <Style>
+                <Border>
+                  <Style>None</Style>
+                </Border>
+                <PaddingLeft>2pt</PaddingLeft>
+                <PaddingRight>2pt</PaddingRight>
+                <PaddingTop>2pt</PaddingTop>
+                <PaddingBottom>2pt</PaddingBottom>
+              </Style>
+            </Textbox>
+            <Textbox Name="CurrentTimeTextBox">
+              <CanGrow>true</CanGrow>
+              <KeepTogether>true</KeepTogether>
+              <Paragraphs>
+                <Paragraph>
+                  <TextRuns>
+                    <TextRun>
+                      <Value>=Format(Now(), "M/d/yyyy")</Value>
+                      <Style>
+                        <FontFamily>Segoe UI</FontFamily>
+                      </Style>
+                    </TextRun>
+                  </TextRuns>
+                  <Style>
+                    <TextAlign>Center</TextAlign>
+                  </Style>
+                </Paragraph>
+              </Paragraphs>
+              <Top>0.42014in</Top>
+              <Left>2.63058in</Left>
+              <Height>0.25in</Height>
+              <Width>1.44791in</Width>
+              <ZIndex>4</ZIndex>
+              <DataElementOutput>NoOutput</DataElementOutput>
+              <Style>
+                <Border>
+                  <Style>None</Style>
+                </Border>
+                <PaddingLeft>2pt</PaddingLeft>
+                <PaddingRight>2pt</PaddingRight>
+                <PaddingTop>2pt</PaddingTop>
+                <PaddingBottom>2pt</PaddingBottom>
+              </Style>
+            </Textbox>
+          </ReportItems>
+          <Style>
+            <Border>
+              <Style>None</Style>
+            </Border>
+          </Style>
+        </PageHeader>
+        <PageFooter>
+          <Height>0.57292in</Height>
+          <PrintOnFirstPage>true</PrintOnFirstPage>
+          <PrintOnLastPage>true</PrintOnLastPage>
+          <ReportItems>
+            <Textbox Name="PageNumberTextBox">
+              <CanGrow>true</CanGrow>
+              <KeepTogether>true</KeepTogether>
+              <Paragraphs>
+                <Paragraph>
+                  <TextRuns>
+                    <TextRun>
+                      <Value>="Page: " + Str(Globals!OverallPageNumber) + " of " + Str(Globals!OverallTotalPages)</Value>
+                      <Style>
+                        <FontFamily>Segoe UI</FontFamily>
+                      </Style>
+                    </TextRun>
+                  </TextRuns>
+                  <Style>
+                    <TextAlign>Center</TextAlign>
+                  </Style>
+                </Paragraph>
+              </Paragraphs>
+              <Top>0.04167in</Top>
+              <Height>0.25in</Height>
+              <Width>6.95349in</Width>
+              <DataElementOutput>NoOutput</DataElementOutput>
+              <Style>
+                <Border>
+                  <Style>None</Style>
+                </Border>
+                <PaddingLeft>2pt</PaddingLeft>
+                <PaddingRight>2pt</PaddingRight>
+                <PaddingTop>2pt</PaddingTop>
+                <PaddingBottom>2pt</PaddingBottom>
+              </Style>
+            </Textbox>
+          </ReportItems>
+          <Style>
+            <Border>
+              <Style>None</Style>
+            </Border>
+          </Style>
+        </PageFooter>
+        <PageHeight>8.5in</PageHeight>
+        <PageWidth>11in</PageWidth>
+        <LeftMargin>0.5in</LeftMargin>
+        <RightMargin>0.5in</RightMargin>
+        <TopMargin>1in</TopMargin>
+        <BottomMargin>1in</BottomMargin>
+        <Style />
+      </Page>
+    </ReportSection>
+  </ReportSections>
+  <ReportParameters>
+    <ReportParameter Name="CRM_URL">
+      <DataType>String</DataType>
+      <Nullable>true</Nullable>
+      <AllowBlank>true</AllowBlank>
+      <Prompt>CRM_URL</Prompt>
+      <Hidden>true</Hidden>
+    </ReportParameter>
+    <ReportParameter Name="CRM_FullName">
+      <DataType>String</DataType>
+      <Nullable>true</Nullable>
+      <DefaultValue>
+        <Values>
+          <Value>Scott Williamson</Value>
+        </Values>
+      </DefaultValue>
+      <AllowBlank>true</AllowBlank>
+      <Prompt>CRM_FullName</Prompt>
+      <Hidden>true</Hidden>
+    </ReportParameter>
+    <ReportParameter Name="CRM_FilterText">
+      <DataType>String</DataType>
+      <Nullable>true</Nullable>
+      <AllowBlank>true</AllowBlank>
+      <Prompt>CRM_FilterText</Prompt>
+      <Hidden>true</Hidden>
+    </ReportParameter>
+    <ReportParameter Name="p_asofdate">
+      <DataType>DateTime</DataType>
+      <DefaultValue>
+        <DataSetReference>
+          <DataSetName>today_ds</DataSetName>
+          <ValueField>today</ValueField>
+        </DataSetReference>
+      </DefaultValue>
+      <Prompt>Enter As of Date</Prompt>
+    </ReportParameter>
+    <ReportParameter Name="p_contributiontype">
+      <DataType>String</DataType>
+      <Prompt>Enter Contribution Type</Prompt>
+      <ValidValues>
+        <DataSetReference>
+          <DataSetName>contributiontype_ds</DataSetName>
+          <ValueField>value</ValueField>
+          <LabelField>value</LabelField>
+        </DataSetReference>
+      </ValidValues>
+      <MultiValue>true</MultiValue>
+    </ReportParameter>
+  </ReportParameters>
+  <ReportParametersLayout>
+    <GridLayoutDefinition>
+      <NumberOfColumns>3</NumberOfColumns>
+      <NumberOfRows>2</NumberOfRows>
+      <CellDefinitions>
+        <CellDefinition>
+          <ColumnIndex>0</ColumnIndex>
+          <RowIndex>0</RowIndex>
+          <ParameterName>CRM_URL</ParameterName>
+        </CellDefinition>
+        <CellDefinition>
+          <ColumnIndex>1</ColumnIndex>
+          <RowIndex>0</RowIndex>
+          <ParameterName>CRM_FullName</ParameterName>
+        </CellDefinition>
+        <CellDefinition>
+          <ColumnIndex>2</ColumnIndex>
+          <RowIndex>0</RowIndex>
+          <ParameterName>CRM_FilterText</ParameterName>
+        </CellDefinition>
+        <CellDefinition>
+          <ColumnIndex>0</ColumnIndex>
+          <RowIndex>1</RowIndex>
+          <ParameterName>p_asofdate</ParameterName>
+        </CellDefinition>
+        <CellDefinition>
+          <ColumnIndex>1</ColumnIndex>
+          <RowIndex>1</RowIndex>
+          <ParameterName>p_contributiontype</ParameterName>
+        </CellDefinition>
+      </CellDefinitions>
+    </GridLayoutDefinition>
+  </ReportParametersLayout>
+  <CustomProperties>
+    <CustomProperty>
+      <Name>Custom</Name>
+      <Value>&lt;MSCRM xmlns="mscrm"&gt;&amp;lt;ReportFilter&amp;gt;&amp;lt;ReportEntity paramname="P1"&amp;gt;&amp;lt;fetch version="1.0" output-format="xml-platform" mapping="logical" distinct="false"&amp;gt;&amp;lt;entity name="contact"&amp;gt;&amp;lt;all-attributes /&amp;gt;&amp;lt;filter type="and"&amp;gt;&amp;lt;condition attribute="modifiedon" operator="last-x-days" value="30" /&amp;gt;&amp;lt;/filter&amp;gt;&amp;lt;/entity&amp;gt;&amp;lt;/fetch&amp;gt;&amp;lt;/ReportEntity&amp;gt;&amp;lt;ReportEntity paramname="P2"&amp;gt;&amp;lt;fetch version="1.0" output-format="xml-platform" mapping="logical" distinct="false"&amp;gt;&amp;lt;entity name="account"&amp;gt;&amp;lt;all-attributes /&amp;gt;&amp;lt;filter type="and"&amp;gt;&amp;lt;condition attribute="modifiedon" operator="last-x-days" value="30" /&amp;gt;&amp;lt;/filter&amp;gt;&amp;lt;/entity&amp;gt;&amp;lt;/fetch&amp;gt;&amp;lt;/ReportEntity&amp;gt;&amp;lt;/ReportFilter&amp;gt;&lt;/MSCRM&gt;</Value>
+    </CustomProperty>
+  </CustomProperties>
+  <EmbeddedImages>
+    <EmbeddedImage Name="EllucianCrmAdvanceLogoReports">
+      <MIMEType>image/png</MIMEType>
+      <ImageData>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</ImageData>
+    </EmbeddedImage>
+  </EmbeddedImages>
+  <rd:ReportUnitType>Inch</rd:ReportUnitType>
+  <rd:ReportID>34b29811-fc79-4132-8006-4cb897dcadf3</rd:ReportID>
+</Report>
