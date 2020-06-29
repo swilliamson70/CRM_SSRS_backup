@@ -1,0 +1,30 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio 15
+VisualStudioVersion = 15.0.28307.1145
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{F14B399A-7131-4C87-9E4B-1186C45EF12D}") = "CRM_Dev", "CRM_Test_2\CRM_Dev.rptproj", "{CAD74B52-37E6-4257-892C-A5AD03C7676B}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Default = Debug|Default
+		DebugLocal|Default = DebugLocal|Default
+		Release|Default = Release|Default
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{CAD74B52-37E6-4257-892C-A5AD03C7676B}.Debug|Default.ActiveCfg = Debug
+		{CAD74B52-37E6-4257-892C-A5AD03C7676B}.Debug|Default.Build.0 = Debug
+		{CAD74B52-37E6-4257-892C-A5AD03C7676B}.Debug|Default.Deploy.0 = Debug
+		{CAD74B52-37E6-4257-892C-A5AD03C7676B}.DebugLocal|Default.ActiveCfg = DebugLocal
+		{CAD74B52-37E6-4257-892C-A5AD03C7676B}.DebugLocal|Default.Build.0 = DebugLocal
+		{CAD74B52-37E6-4257-892C-A5AD03C7676B}.Release|Default.ActiveCfg = Release
+		{CAD74B52-37E6-4257-892C-A5AD03C7676B}.Release|Default.Build.0 = Release
+		{CAD74B52-37E6-4257-892C-A5AD03C7676B}.Release|Default.Deploy.0 = Release
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {2F4D443D-F1A1-4364-87B0-7BCE9F5AF149}
+	EndGlobalSection
+EndGlobal
