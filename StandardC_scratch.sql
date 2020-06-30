@@ -30,9 +30,9 @@
  /*
 ATVSALU								elcn_formattednametype.elcn_type	.elcn_formattednametypeid
 CFML	Combined Formal Salutation	
-SFML	Single Formal Salutation	
-SFME	Single Formal (envelope)
-CMFE	Combined Formal (envelope)
+SFML	Single Formal Salutation	Formal Salutation	1972C46B-462D-E411-9415-005056804B43
+SFME	Single Formal (envelope)	Mailing Name	0F72C46B-462D-E411-9415-005056804B43
+CMFE	Combined Formal (envelope)	Joint Mailing Name	1172C46B-462D-E411-9415-005056804B43
 CFE2	Combined Formal Ln 2
 CIFE*	Combined Informal (envelope)	Formal Joint Salutation	- A335568A-ECCC-46A4-A229-36D71DBCFCA6
 SIFE*	Single Informal (envelope)		Mailing Name - 0F72C46B-462D-E411-9415-005056804B43
