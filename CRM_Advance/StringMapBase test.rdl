@@ -13,16 +13,11 @@
     <DataSet Name="StringMapBase">
       <Query>
         <DataSourceName>MSCRM_DataSource</DataSourceName>
-        <QueryParameters>
-          <QueryParameter Name="@value">
-            <Value>=Parameters!value.Value</Value>
-          </QueryParameter>
-        </QueryParameters>
         <CommandText>
 
-SELECT        ObjectTypeCode, AttributeName, AttributeValue, LangId, OrganizationId, Value, DisplayOrder, StringMapId
+SELECT       *
 FROM            StringMapBase
-where attributevalue = (@value)</CommandText>
+</CommandText>
       </Query>
       <Fields>
         <Field Name="ObjectTypeCode">
@@ -52,6 +47,10 @@ where attributevalue = (@value)</CommandText>
         <Field Name="DisplayOrder">
           <DataField>DisplayOrder</DataField>
           <rd:TypeName>System.Int32</rd:TypeName>
+        </Field>
+        <Field Name="VersionNumber">
+          <DataField>VersionNumber</DataField>
+          <rd:TypeName>System.Byte[]</rd:TypeName>
         </Field>
         <Field Name="StringMapId">
           <DataField>StringMapId</DataField>
@@ -657,23 +656,10 @@ where attributevalue = (@value)</CommandText>
       </Page>
     </ReportSection>
   </ReportSections>
-  <ReportParameters>
-    <ReportParameter Name="value">
-      <DataType>String</DataType>
-      <Prompt>value</Prompt>
-    </ReportParameter>
-  </ReportParameters>
   <ReportParametersLayout>
     <GridLayoutDefinition>
       <NumberOfColumns>4</NumberOfColumns>
       <NumberOfRows>2</NumberOfRows>
-      <CellDefinitions>
-        <CellDefinition>
-          <ColumnIndex>1</ColumnIndex>
-          <RowIndex>0</RowIndex>
-          <ParameterName>value</ParameterName>
-        </CellDefinition>
-      </CellDefinitions>
     </GridLayoutDefinition>
   </ReportParametersLayout>
   <rd:ReportUnitType>Inch</rd:ReportUnitType>

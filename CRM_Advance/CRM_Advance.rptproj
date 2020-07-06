@@ -53,6 +53,8 @@
   </ItemGroup>
   <ItemGroup>
     <Report Include="ConstituentProfileReport.rdl" />
+    <Report Include="Endowment.rdl" />
+    <Report Include="EndowmentValuationTable.rdl" />
     <Report Include="Lybunt.rdl" />
     <Report Include="NSUOK_ContribLybunt.rdl" />
     <Report Include="Standard_Constituent.rdl" />

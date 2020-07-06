@@ -1,11 +1,23 @@
-﻿select * from elcn_designationBase;
+﻿select su.domainname, su.fullname
+from systemuserbase su
+where su.domainname = 'willi204@nsuok.edu'
+;
+
+SELECT column_name,ordinal_position,column_default,is_nullable,data_type,character_maximum_length,CHARACTER_OCTET_LENGTH,numeric_precision,numeric_precision_radix,numeric_scale
+		FROM 	INFORMATION_SCHEMA.COLUMNS
+		where upper(column_name) like '%MARKET%'
+order by 3,4;
+
+select * from elcn_endowmentvaluation
+
+--select * from elcn_designationBase;
 /*elcn_designationpurpose
 elcn_DesignationStatusId
 elcn_designationtype
 elcn_FundingGoal_Progress
 */
 
-select * from elcn_financialawardrecipientBase;
+--select * from elcn_financialawardrecipientBase;
 /*elcn_financialawardrecipientId	014B971E-DE33-4105-9991-0003F0147317
 CreatedOn	59:00.0
 CreatedBy	A0F01E52-9E83-E911-80D7-0A253F89019C
@@ -40,9 +52,9 @@ elcn_StatusId	NULL
 elcn_stewardshipintegrationid	NULL
 elcn_studentfinaidawardintegrationid	NULL
 */
-select * from contactbase where contactid = '628417C4-5657-4517-AF3F-7543EA9AD902';
+--select * from contactbase where contactid = '628417C4-5657-4517-AF3F-7543EA9AD902';
 
-select * from elcn_financialawardbase where elcn_financialawardid = '7AF5BDBA-482E-4ADE-AC20-389296EDB73D';
+--select * from elcn_financialawardbase where elcn_financialawardid = '7AF5BDBA-482E-4ADE-AC20-389296EDB73D';
 /*elcn_financialawardId	7AF5BDBA-482E-4ADE-AC20-389296EDB73D
 CreatedOn	59:00.0
 CreatedBy	A0F01E52-9E83-E911-80D7-0A253F89019C
@@ -69,81 +81,30 @@ elcn_NumberofRecipients	00:00.0
 elcn_ShortDescription	PLC Scholarship
 elcn_StartDate	NULL
 */
+select * from elcn_designationbase where elcn_designationid = '3A7A2CC7-B94B-4230-BF4D-712D5A496AD5';
+
+
+
+
+
+
+
 /*
-SELECT 
-	elcn_personid,
-	CASE elcn_typeid 
-		WHEN '1172C46B-462D-E411-9415-005056804B43' THEN 'CIFE' /*Formal Joint Salutation*/
-		WHEN '0F72C46B-462D-E411-9415-005056804B43' THEN 'SIFE'
-		WHEN '1B72C46B-462D-E411-9415-005056804B43' THEN 'SIFL'
-		WHEN '89799F16-C4E8-4269-B409-5756998F193F' THEN 'CIFL'
-		ELSE cast(elcn_typeid as varchar(40))
-	END AS SALU_CODE,
-	elcn_formattedname
-INTO
-	#temp_aprsalu
-FROM
-	elcn_formattednamebase
-WHERE
-	elcn_typeid in ('1172C46B-462D-E411-9415-005056804B43', -- Joint Mailing Name (CIFE)
-			    		'0F72C46B-462D-E411-9415-005056804B43', --Mailing Name (SIFE)
-	     				'1B72C46B-462D-E411-9415-005056804B43', --Casual Salutation (SIFL)
-		    			'89799F16-C4E8-4269-B409-5756998F193F') --Casual Joint Saluation (CIFL)
-;
-CREATE NONCLUSTERED INDEX INDX_TMP_ID_SALU ON #temp_aprsalu (elcn_personId,salu_code);
-*/
+	
 
-SELECT
-	db.elcn_code DESIGNATION,
-	db.elcn_name DESIGNATION_NAME,
-	donor.datatel_EnterpriseSystemId ADADESG_ID,
-	donor.elcn_SortName,
-	--casualjoint_salu.elcn_personid,
-	casualjoint_salu.elcn_formattedname,
-	mailingjoint_salu.elcn_formattedname,
-	ab.elcn_street1 MAILING_STREET1,
-	ab.elcn_City	MAILING_CITY,
-	spb.elcn_Abbreviation as State_Province,
-	ab.elcn_postalcode AS Postal_Code,
-	dcb.Datatel_name as Nation
 
-FROM elcn_financialawardbase FAB
-	LEFT JOIN elcn_financialawardrecipientBase FARB
-		ON fab.elcn_financialawardId = farb.elcn_FinancialAwardId
-	LEFT JOIN elcn_designationBase DB
-		ON fab.elcn_DesignationId = db.elcn_designationid
-	LEFT JOIN contactbase scholar
-		ON farb.elcn_personid = scholar.contactid
-	LEFT JOIN elcn_designationrelationshipBase DRB
-		ON fab.elcn_designationid = drb.elcn_designationid 
-	LEFT JOIN contactbase DONOR
-		ON drb.elcn_personid = donor.contactid
-	LEFT JOIN #temp_aprsalu CASUALJOINT_SALU
-		ON  donor.contactid = casualjoint_salu.elcn_personid
-		AND casualjoint_salu.salu_code = 'CIFL'
-	LEFT JOIN #temp_aprsalu MAILINGJOINT_SALU
-		ON  donor.contactid = mailingjoint_salu.elcn_personid
-		AND mailingjoint_salu.salu_code = 'CIFE'
 
-	LEFT JOIN elcn_addressassociationBase aab 
-		ON aab.elcn_personId = donor.ContactId 
-		AND aab.elcn_addresstypeid = 'CC535A28-13DE-42F4-B60C-EAFC70983281' /* Mailing */
-		AND elcn_AddressStatusId = '378DE114-EB09-E511-943C-0050568068B7' /* Current */
-	LEFT JOIN elcn_addressBase ab 
-		ON ab.elcn_addressId = aab.elcn_AddressId
-	LEFT JOIN elcn_stateprovinceBase spb 
-		ON spb.elcn_stateprovinceId = ab.elcn_StateProvinceId
-	LEFT JOIN Datatel_countryBase dcb 
-		ON dcb.Datatel_countryId = ab.elcn_country
 where
 	--farb.elcn_personid = '628417C4-5657-4517-AF3F-7543EA9AD902'
 	--db.elcn_code = 'SCH0001'
 	--farb.elcn_awardterm like '%2019%'
 	scholar.fullname like 'Riley Kay Hughes'
-order by scholar.lastname, scholar.firstname, scholar.MiddleName 
+*/
+
 ;
 
 
+/*
 select * from contactbase cb where cb.datatel_EnterpriseSystemId = 'N00139546';
 select * from elcn_formattednamebase where elcn_personid = '96806BFE-DDA7-44D4-BDF8-4E884BFBA9CF';	
 
@@ -155,26 +116,27 @@ and elcn_addresstypeid = 'CC535A28-13DE-42F4-B60C-EAFC70983281' -- CC535A28-13DE
 select elcn_addresstypeid, elcn_type  from elcn_addresstype;
 select * from elcn_statusbase where elcn_statusid = '378DE114-EB09-E511-943C-0050568068B7';
 
--->> DESIGNATION (adbdesg_desg)
-select elcn_code from elcn_designationBase;
 
--->> DESIGNATION_NAME (adbdesg_name)
-select elcn_name from elcn_designationBase;
 
--->> ADADESG_ID
-
--->> ADADESG_NAME
--->> MAILING_First Name
--->> MAILING_Full Name
--->> MAILING_STREET1
--->> MAILING_CITY
--->> MAILING_STATE
--->> MAILING_POSTAL_CODE
--->> MAILING_NATION
--->> Scholars Name
--->> SHOLARSHIP_AWARDED_TO
 -->> DESIGNATION_COMMENT
+select * from AnnotationBase where notetext like 'Established in November 2018%'; -- ObjectId FC011202-C1CE-4C68-A3B5-B2783DB4AACA
+
+select * from elcn_designationBase-- where elcn_designationid = 'FC011202-C1CE-4C68-A3B5-B2783DB4AACA';
+
+select db.elcn_code,db.elcn_name,db.elcn_designationstatusid,elcn_statusbase.elcn_name status, db.elcn_designationtype, destype.elcn_type
+from elcn_designationBase db
+	join elcn_statusbase 
+		on elcn_designationstatusid = elcn_statusid
+		and elcn_designationstatusid = '378DE114-EB09-E511-943C-0050568068B7' /*Current*/
+	join elcn_designationtypebase destype
+		on db.elcn_designationtype = elcn_designationtypeid 
+		and db.elcn_designationtype = '0030E543-A0B8-E911-80D8-0A253F89019C' /*Endowed Program*/
+order by 1;
+select * from elcn_designationtypebase;
+select * from elcn_designationrelationshipBase
+
 -->> AID_YEAR
+
 -->> AWARD_AMOUNT
 -->> FUND
 
@@ -222,3 +184,63 @@ adbdesg_locn_code
 -->> Total Gift Revenue
 
 
+*/
+
+--select elcn_financialawardtypeid, elcn_name from elcn_financialawardtype;
+/*elcn_financialawardtypeid	elcn_name
+9F8E25ED-A383-E911-80D7-0A253F89019C	Grant
+7A533A03-B9E8-4808-A5BF-BE0FEE8149A3	Loan
+9E8E25ED-A383-E911-80D7-0A253F89019C	Scholarship
+4C7E43B6-2203-4677-A70D-0846EE33CFA9	Work
+*/
+
+--select * from elcn_designation where elcn_account2 is not null elcn_designationid = '3A7A2CC7-B94B-4230-BF4D-712D5A496AD5';
+
+/*exec sp_columns elcn_endowmentvaluation
+elcn_designationIdName
+ModifiedByName
+ModifiedByYomiName
+CreatedByName
+CreatedByYomiName
+CreatedOnBehalfByName
+CreatedOnBehalfByYomiName
+ModifiedOnBehalfByName
+ModifiedOnBehalfByYomiName
+TransactionCurrencyIdName
+OwnerId
+OwnerIdName
+OwnerIdYomiName
+OwnerIdDsc
+OwnerIdType
+OwningUser
+OwningTeam
+elcn_endowmentvaluationId
+CreatedOn
+CreatedBy
+ModifiedOn
+ModifiedBy
+CreatedOnBehalfBy
+ModifiedOnBehalfBy
+OwningBusinessUnit
+statecode
+statuscode
+VersionNumber
+ImportSequenceNumber
+OverriddenCreatedOn
+TimeZoneRuleVersionNumber
+UTCConversionTimeZoneCode
+elcn_name
+elcn_bookvalue
+TransactionCurrencyId
+ExchangeRate
+elcn_bookvalue_Base
+elcn_designationId
+elcn_distributeiIncome
+elcn_distributeiincome_Base
+elcn_fiscalyear
+elcn_marketvalue
+elcn_marketvalue_Base
+elcn_shares
+elcn_valuationdate*/
+
+select * from datatel_countrybase;
