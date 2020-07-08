@@ -787,7 +787,7 @@ CREATE NONCLUSTERED INDEX INDX_TMP_ID ON #temp_phone (elcn_personid);
 
 select * from #temp_phone where elcn_personid = '2854C1AE-700C-42CD-A6E5-8ACA7A3113D3';
 select * from elcn_phonebase where elcn_personid = '2854C1AE-700C-42CD-A6E5-8ACA7A3113D3';
-select * from contactbase where contactbase.datatel_EnterpriseSystemId = 'N00014385';
+select * from contactbase where contactbase.datatel_EnterpriseSystemId = 'N00147745';
 
 select * from elcn_businessrelationship;
 
@@ -830,3 +830,34 @@ ORDER BY elcn_personid, elcn_typeid, elcn_locked desc, modifiedon desc
 select * from elcn_formattednamebase 
 where elcn_personid = '6F06C4ED-9CF8-4E34-96A2-6208165D44FA'
 --and elcn_typeid = '0F72C46B-462D-E411-9415-005056804B43'
+;
+SELECT
+	elcn_PrimaryMemberPersonId, 
+	elcn_membershipprogramlevelbase.elcn_name ,
+	elcn_statusbase.elcn_name status,
+	elcn_membershipBase.elcn_MembershipNumber , --7701
+	CONVERT(DATE, elcn_membershipBase.elcn_ExpireDate) elcn_ExpireDate  -- null
+INTO #temp_membership
+FROM
+	elcn_membershipBase
+	JOIN elcn_membershipprogramlevelbase
+		ON elcn_membershipBase.elcn_MembershipLevelId = elcn_membershipprogramlevelid
+	JOIN elcn_statusbase
+		ON elcn_membershipBase.elcn_MembershipStatusId  = elcn_statusid
+;
+CREATE NONCLUSTERED INDEX INDX_TMP_ID_MEMBERSHIP ON #temp_membership (elcn_primarymemberpersonid);
+		SELECT
+			elcn_PrimaryMemberPersonId,
+			elcn_name,
+			status,
+			elcn_membershipnumber,
+			elcn_expiredate,
+			ROW_NUMBER() OVER (PARTITION BY elcn_PrimaryMemberPersonId 
+				ORDER BY ISNULL(elcn_expiredate,'31-DEC-2999') DESC) rn
+		FROM
+			#temp_membership
+		WHERE
+			(	elcn_name not like 'FAN%'
+				AND elcn_name not like 'WON%'
+			) 
+			and elcn_primarymemberpersonid = '55A718A1-0FE8-4274-94CC-D30FB4A63853'

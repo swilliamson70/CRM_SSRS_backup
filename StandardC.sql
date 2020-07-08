@@ -816,7 +816,7 @@ LEFT JOIN #temp_education edu_3 on edu_3.elcn_PersonId = cb.ContactID and edu_3.
 			status,
 			elcn_membershipnumber,
 			elcn_expiredate,
-			ROW_NUMBER() OVER (PARTITION BY elcn_PrimaryMemberPersonId,elcn_name 
+			ROW_NUMBER() OVER (PARTITION BY elcn_PrimaryMemberPersonId
 				ORDER BY ISNULL(elcn_expiredate,'31-DEC-2999') DESC) rn
 		FROM
 			#temp_membership
@@ -835,7 +835,7 @@ LEFT JOIN #temp_education edu_3 on edu_3.elcn_PersonId = cb.ContactID and edu_3.
 			status,
 			elcn_membershipnumber,
 			elcn_expiredate,
-			ROW_NUMBER() OVER (PARTITION BY elcn_PrimaryMemberPersonId,elcn_name 
+			ROW_NUMBER() OVER (PARTITION BY elcn_PrimaryMemberPersonId
 				ORDER BY ISNULL(elcn_expiredate,'31-DEC-2999') DESC) rn
 		FROM
 			#temp_membership
@@ -851,7 +851,7 @@ LEFT JOIN #temp_education edu_3 on edu_3.elcn_PersonId = cb.ContactID and edu_3.
 			status,
 			elcn_membershipnumber,
 			elcn_expiredate,
-			ROW_NUMBER() OVER (PARTITION BY elcn_PrimaryMemberPersonId,elcn_name 
+			ROW_NUMBER() OVER (PARTITION BY elcn_PrimaryMemberPersonId
 				ORDER BY ISNULL(elcn_expiredate,'31-DEC-2999') DESC) rn
 		FROM
 			#temp_membership
