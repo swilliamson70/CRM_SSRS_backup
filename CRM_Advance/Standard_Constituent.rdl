@@ -690,7 +690,10 @@ FROM(
 		elcn_anonymitytypeBase.elcn_type anonymityType
 	FROM
 		ContactBase
-		LEFT JOIN elcn_anonymitytypebase on contactbase.elcn_AnonymityTypeId = elcn_anonymitytypeBase.elcn_anonymitytypeId
+		LEFT JOIN elcn_anonymitytypebase 
+			ON contactbase.elcn_AnonymityTypeId = elcn_anonymitytypeBase.elcn_anonymitytypeId
+	WHERE
+		fullname not like '%DO%NOT%USE'
 	) cb
 
 	LEFT JOIN(
@@ -832,7 +835,7 @@ LEFT JOIN #temp_education edu_3 on edu_3.elcn_PersonId = cb.ContactID and edu_3.
 			status,
 			elcn_membershipnumber,
 			elcn_expiredate,
-			ROW_NUMBER() OVER (PARTITION BY elcn_PrimaryMemberPersonId,elcn_name 
+			ROW_NUMBER() OVER (PARTITION BY elcn_PrimaryMemberPersonId
 				ORDER BY ISNULL(elcn_expiredate,'31-DEC-2999') DESC) rn
 		FROM
 			#temp_membership
@@ -851,7 +854,7 @@ LEFT JOIN #temp_education edu_3 on edu_3.elcn_PersonId = cb.ContactID and edu_3.
 			status,
 			elcn_membershipnumber,
 			elcn_expiredate,
-			ROW_NUMBER() OVER (PARTITION BY elcn_PrimaryMemberPersonId,elcn_name 
+			ROW_NUMBER() OVER (PARTITION BY elcn_PrimaryMemberPersonId
 				ORDER BY ISNULL(elcn_expiredate,'31-DEC-2999') DESC) rn
 		FROM
 			#temp_membership
@@ -867,7 +870,7 @@ LEFT JOIN #temp_education edu_3 on edu_3.elcn_PersonId = cb.ContactID and edu_3.
 			status,
 			elcn_membershipnumber,
 			elcn_expiredate,
-			ROW_NUMBER() OVER (PARTITION BY elcn_PrimaryMemberPersonId,elcn_name 
+			ROW_NUMBER() OVER (PARTITION BY elcn_PrimaryMemberPersonId
 				ORDER BY ISNULL(elcn_expiredate,'31-DEC-2999') DESC) rn
 		FROM
 			#temp_membership
@@ -958,8 +961,7 @@ LEFT JOIN #temp_education edu_3 on edu_3.elcn_PersonId = cb.ContactID and edu_3.
 	)ACTIVITIES ON cb.contactid = activities.elcn_personid 		
 WHERE
 cb.statuscode =1
-;
-</CommandText>
+;</CommandText>
         <rd:UseGenericDesigner>true</rd:UseGenericDesigner>
       </Query>
       <Fields>

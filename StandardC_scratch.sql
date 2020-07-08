@@ -787,7 +787,7 @@ CREATE NONCLUSTERED INDEX INDX_TMP_ID ON #temp_phone (elcn_personid);
 
 select * from #temp_phone where elcn_personid = '2854C1AE-700C-42CD-A6E5-8ACA7A3113D3';
 select * from elcn_phonebase where elcn_personid = '2854C1AE-700C-42CD-A6E5-8ACA7A3113D3';
-select * from contactbase where contactbase.datatel_EnterpriseSystemId = 'N00147745';
+select * from contactbase where contactbase.datatel_EnterpriseSystemId = 'N00161700';
 
 select * from elcn_businessrelationship;
 

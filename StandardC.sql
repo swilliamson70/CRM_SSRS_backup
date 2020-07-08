@@ -674,7 +674,10 @@ FROM(
 		elcn_anonymitytypeBase.elcn_type anonymityType
 	FROM
 		ContactBase
-		LEFT JOIN elcn_anonymitytypebase on contactbase.elcn_AnonymityTypeId = elcn_anonymitytypeBase.elcn_anonymitytypeId
+		LEFT JOIN elcn_anonymitytypebase 
+			ON contactbase.elcn_AnonymityTypeId = elcn_anonymitytypeBase.elcn_anonymitytypeId
+	WHERE
+		fullname not like '%DO%NOT%USE'
 	) cb
 
 	LEFT JOIN(
@@ -942,4 +945,5 @@ LEFT JOIN #temp_education edu_3 on edu_3.elcn_PersonId = cb.ContactID and edu_3.
 	)ACTIVITIES ON cb.contactid = activities.elcn_personid 		
 WHERE
 cb.statuscode =1
+--AND cb.ContactId = '85141532-F9E5-4037-8737-F11B103E4E0D'
 ;
