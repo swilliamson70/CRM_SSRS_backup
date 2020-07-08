@@ -755,3 +755,78 @@ from systemuserbase su
 where su.domainname = 'turnerm@nsuok.edu'
 ;
 select * from INFORMATION_SCHEMA.Tables where table_name like 'Filtered%';
+
+drop table #temp_phone;
+SELECT
+	elcn_personid, --guid 
+	elcn_phonenumber, --phone number
+	elcn_type,
+	elcn_preferred -- 0/1
+INTO #temp_phone
+FROM(
+	SELECT 
+		elcn_personid
+		, elcn_phonenumber
+		, elcn_phonetypeBase.elcn_type
+		, elcn_preferred
+		, ROW_NUMBER() OVER (PARTITION BY elcn_personid, elcn_phonetypebase.elcn_type
+								ORDER BY elcn_preferred DESC) RN
+	FROM
+		elcn_phonebase
+		JOIN elcn_phonetypebase
+			ON elcn_phonebase.elcn_phonetype = elcn_phonetypebase.elcn_phonetypeid  
+			AND elcn_phonebase.elcn_phonestatusid = '378DE114-EB09-E511-943C-0050568068B7' -- Current
+			AND elcn_phonebase.statuscode = 1
+	) PHONES 
+WHERE
+	RN = 1
+	and elcn_personid = '2854C1AE-700C-42CD-A6E5-8ACA7A3113D3'
+; 
+
+CREATE NONCLUSTERED INDEX INDX_TMP_ID ON #temp_phone (elcn_personid);
+
+select * from #temp_phone where elcn_personid = '2854C1AE-700C-42CD-A6E5-8ACA7A3113D3';
+select * from elcn_phonebase where elcn_personid = '2854C1AE-700C-42CD-A6E5-8ACA7A3113D3';
+select * from contactbase where contactbase.datatel_EnterpriseSystemId = 'N00014385';
+
+select * from elcn_businessrelationship;
+
+		SELECT
+			elcn_personid,
+			elcn_JobTitle, 
+			elcn_OrganizationIdName,
+			elcn_BusinessRelationshipStatusIdName
+		FROM 
+			elcn_businessrelationship
+		WHERE
+			elcn_PrimaryEmployer = 1
+			AND statuscode =1
+			and elcn_personid = '40B0FE36-B4B5-4771-B2F9-057A477E0DE6'
+;
+SELECT 
+	elcn_personid,
+	CASE elcn_typeid 
+		WHEN '1172C46B-462D-E411-9415-005056804B43' THEN 'CIFE'
+		WHEN '0F72C46B-462D-E411-9415-005056804B43' THEN 'SIFE'
+		WHEN '1B72C46B-462D-E411-9415-005056804B43' THEN 'SIFL'
+		WHEN '89799F16-C4E8-4269-B409-5756998F193F' THEN 'CIFL'
+		ELSE cast(elcn_typeid as varchar(40))
+	END AS SALU_CODE,
+	elcn_formattedname
+--INTO
+--	#temp_aprsalu
+FROM
+	elcn_formattednamebase
+WHERE
+	elcn_typeid in ('1172C46B-462D-E411-9415-005056804B43', -- Joint Mailing Name (CIFE)
+			    		'0F72C46B-462D-E411-9415-005056804B43', --Mailing Name (SIFE)
+	     				'1B72C46B-462D-E411-9415-005056804B43', --Casual Salutation (SIFL)
+		    			'89799F16-C4E8-4269-B409-5756998F193F') --Casual Joint Saluation (CIFL)
+	AND (elcn_enddate >= SYSDATETIME() 
+		OR elcn_enddate IS NULL)
+and elcn_personid = '6F06C4ED-9CF8-4E34-96A2-6208165D44FA'
+ORDER BY elcn_personid, elcn_typeid, elcn_locked desc, modifiedon desc
+;
+select * from elcn_formattednamebase 
+where elcn_personid = '6F06C4ED-9CF8-4E34-96A2-6208165D44FA'
+--and elcn_typeid = '0F72C46B-462D-E411-9415-005056804B43'

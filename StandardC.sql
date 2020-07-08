@@ -4,10 +4,6 @@
 	d.elcn_code DEGREE,
 	d.elcn_Name AS Degree_Name,
 	e.elcn_DegreeYear Degree_Year,
-	ib.elcn_name AS Institution_Name,
-	alb.elcn_name as Academic_Level,
-	cb.elcn_name AS College,
-	apb.elcn_name AS Academic_Program,
 	(
 		Select TOP 1 mb.elcn_name FROM elcn_education_elcn_majorBase emb
 		INNER JOIN elcn_majorBase mb ON mb.elcn_majorId = emb.elcn_majorid
@@ -17,15 +13,9 @@
 					ORDER BY e.elcn_DegreeYear DESC) AS RANK_NO
 INTO #temp_education
 FROM dbo.elcn_educationBase e
-	INNER JOIN elcn_degreeBase d on d.elcn_degreeId = e.elcn_DegreeId
-	INNER JOIN elcn_institutionBase ib on ib.elcn_institutionId = e.elcn_InstitutionId
-	LEFT OUTER JOIN elcn_academiclevelBase alb ON alb.elcn_academiclevelId = e.elcn_academicLevel
-	LEFT OUTER JOIN elcn_collegeBase cb on cb.elcn_collegeid = e.elcn_collegeId
-
-	LEFT OUTER JOIN elcn_academicprogramBase apb ON apb.elcn_academicprogramId = e.elcn_academicprogramId 
+	JOIN elcn_degreeBase d on d.elcn_degreeId = e.elcn_DegreeId
 WHERE e.statuscode = 1
 ;
-
 CREATE NONCLUSTERED INDEX INDX_TMP_EDUCATION_RANKS ON #temp_education (elcn_personId);
 
 SELECT 
@@ -47,6 +37,13 @@ WHERE
 			    		'0F72C46B-462D-E411-9415-005056804B43', --Mailing Name (SIFE)
 	     				'1B72C46B-462D-E411-9415-005056804B43', --Casual Salutation (SIFL)
 		    			'89799F16-C4E8-4269-B409-5756998F193F') --Casual Joint Saluation (CIFL)
+	AND (elcn_enddate >= SYSDATETIME() 
+		OR elcn_enddate IS NULL)
+ORDER BY 
+	elcn_personid, 
+	elcn_typeid, 
+	elcn_locked desc, 
+	modifiedon desc
 ;
 CREATE NONCLUSTERED INDEX INDX_TMP_ID_SALU ON #temp_aprsalu (elcn_personId,salu_code);
 
@@ -150,22 +147,27 @@ CREATE NONCLUSTERED INDEX INDX_TMP_ID ON #temp_email_slot (elcn_personid);
 SELECT
 	elcn_personid, --guid 
 	elcn_phonenumber, --phone number
-	elcn_phonetypebase.elcn_type,
+	elcn_type,
 	elcn_preferred -- 0/1
 INTO #temp_phone
-FROM
-	elcn_phonebase
-	JOIN elcn_phonetypebase
-		ON elcn_phonebase.elcn_phonetype = elcn_phonetypebase.elcn_phonetypeid  
-		AND elcn_phonebase.elcn_phonestatusid = '378DE114-EB09-E511-943C-0050568068B7' -- Current
-		AND elcn_phonebase.statuscode = 1
-; 
+FROM(
+	SELECT 
+		elcn_personid
+		, elcn_phonenumber
+		, elcn_phonetypeBase.elcn_type
+		, elcn_preferred
+		, ROW_NUMBER() OVER (PARTITION BY elcn_personid, elcn_phonetypebase.elcn_type
+								ORDER BY elcn_preferred DESC) RN
+	FROM
+		elcn_phonebase
+		JOIN elcn_phonetypebase
+			ON elcn_phonebase.elcn_phonetype = elcn_phonetypebase.elcn_phonetypeid  
+			AND elcn_phonebase.elcn_phonestatusid = '378DE114-EB09-E511-943C-0050568068B7' -- Current
+			AND elcn_phonebase.statuscode = 1
+	) PHONES 
+WHERE
+	RN = 1 
 CREATE NONCLUSTERED INDEX INDX_TMP_ID ON #temp_phone (elcn_personid);
-
---------------T O P 
---
---
---
 
 with w_get_consec_years AS ( 
 --anchor 
@@ -495,10 +497,7 @@ SELECT
 		WHEN 1 then 'Y'
 		ELSE null
 	END Business_Phone_Preferred, --B1_PRIMARY_IND
-/*
 
-
-*******************/
 --TOTAL_PLEDGE_PAYMENTS1
 	(
 		SELECT
@@ -587,8 +586,6 @@ SELECT
 			--and elcn_contributiondonorBase.elcn_ContributionDate BETWEEN @p_StartDate AND @p_EndDate
 	) Total_Premiums,
 
--- FISCAL_YEAR1 -- do not use
-
 	(
 		SELECT
 			SUM(elcn_contribution.elcn_marketValue)
@@ -629,7 +626,6 @@ ANNUAL_HOUSEHOLD_GIVING -- Householding tools in CRM 3.0
 LIFETIME_HOUSEHOLD_GIVING -- Householding tools in CRM 3.0
 **************************/
 
---RELATION_SOURCE - not needed
 --RELATION_SOURCE_DESC
 	relationship.elcn_type	Relationship,
 	relationship.fullname Relation_Name,
@@ -639,11 +635,6 @@ LIFETIME_HOUSEHOLD_GIVING -- Householding tools in CRM 3.0
 		WHEN 1 THEN 'Y'
 		ELSE null
 	END Joint_Mailing,
---COMBINED_MAILING_PRIORITY_DESC - not needed
---HOUSEHOLD_IND - not mapped from Banner to CRM
-
---DATE_RANGE_TOTAL_GIVING -- financials grouped above
---DATE_RANGE_TOTAL_AUX_AMT -- financials grouped above
 
 	edu_1.Degree Degree1_Degree, --DEGREE_1
 	edu_1.Degree_Name AS Degree1_Degree_Desc,--DEGREE_DESC_1
@@ -719,18 +710,18 @@ JOIN elcn_constituentaffiliationBase cab ON cab.elcn_constituentaffiliationId = 
 
 		) ctb ON ctb.elcn_constituenttypeID = cab.elcn_ConstituentTypeId
 
-LEFT OUTER JOIN elcn_addressassociationBase aab ON aab.elcn_personId = cb.ContactId AND aab.elcn_Preferred =1
+LEFT JOIN elcn_addressassociationBase aab ON aab.elcn_personId = cb.ContactId AND aab.elcn_Preferred =1
 
-LEFT OUTER JOIN elcn_addressBase ab ON ab.elcn_addressId = aab.elcn_AddressId
+LEFT JOIN elcn_addressBase ab ON ab.elcn_addressId = aab.elcn_AddressId
 
-LEFT OUTER JOIN elcn_stateprovinceBase spb ON spb.elcn_stateprovinceId = ab.elcn_StateProvinceId
-LEFT OUTER JOIN Datatel_countryBase dcb ON dcb.Datatel_countryId = ab.elcn_country
-LEFT OUTER JOIN elcn_addresstypeBase atb ON atb.elcn_addresstypeId = aab.elcn_AddressTypeId
-LEFT OUTER JOIN #temp_education edu_1 on edu_1.elcn_PersonId = cb.ContactID and edu_1.rank_no = 1
-LEFT OUTER JOIN #temp_education edu_2 on edu_2.elcn_PersonId = cb.ContactID and edu_2.rank_no = 2
-LEFT OUTER JOIN #temp_education edu_3 on edu_3.elcn_PersonId = cb.ContactID and edu_3.rank_no = 3
+LEFT JOIN elcn_stateprovinceBase spb ON spb.elcn_stateprovinceId = ab.elcn_StateProvinceId
+LEFT JOIN Datatel_countryBase dcb ON dcb.Datatel_countryId = ab.elcn_country
+LEFT JOIN elcn_addresstypeBase atb ON atb.elcn_addresstypeId = aab.elcn_AddressTypeId
+LEFT JOIN #temp_education edu_1 on edu_1.elcn_PersonId = cb.ContactID and edu_1.rank_no = 1
+LEFT JOIN #temp_education edu_2 on edu_2.elcn_PersonId = cb.ContactID and edu_2.rank_no = 2
+LEFT JOIN #temp_education edu_3 on edu_3.elcn_PersonId = cb.ContactID and edu_3.rank_no = 3
 	LEFT JOIN(
-		SELECT
+		SELECT TOP 1
 			elcn_personid,
 			elcn_formattedname
 		FROM
@@ -739,7 +730,7 @@ LEFT OUTER JOIN #temp_education edu_3 on edu_3.elcn_PersonId = cb.ContactID and 
 			salu.salu_code = 'CIFE'
 		) CIFE_SALU ON cb.contactid = cife_salu.elcn_personid
 	LEFT JOIN(
-		SELECT
+		SELECT TOP 1
 			elcn_personid,
 			elcn_formattedname
 		FROM
@@ -748,7 +739,7 @@ LEFT OUTER JOIN #temp_education edu_3 on edu_3.elcn_PersonId = cb.ContactID and 
 			salu.salu_code = 'SIFE'
 		) SIFE_SALU ON cb.contactid = sife_salu.elcn_personid
 	LEFT JOIN(
-		SELECT
+		SELECT TOP 1
 			elcn_personid,
 			elcn_formattedname
 		FROM
@@ -757,7 +748,7 @@ LEFT OUTER JOIN #temp_education edu_3 on edu_3.elcn_PersonId = cb.ContactID and 
 			salu.salu_code = 'CIFL'
 		) CIFL_SALU ON cb.contactid = cifl_salu.elcn_personid
 	LEFT JOIN(
-		SELECT
+		SELECT TOP 1
 			elcn_personid,
 			elcn_formattedname
 		FROM
@@ -935,7 +926,9 @@ LEFT OUTER JOIN #temp_education edu_3 on edu_3.elcn_PersonId = cb.ContactID and 
 		FROM 
 			elcn_businessrelationship
 		WHERE
-			statuscode =1
+			elcn_PrimaryEmployer = 1
+			AND statuscode =1
+
 	)JOB ON cb.contactid = job.elcn_personid 
 	LEFT JOIN(
 		SELECT
