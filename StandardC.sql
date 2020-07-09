@@ -627,11 +627,11 @@ LIFETIME_HOUSEHOLD_GIVING -- Householding tools in CRM 3.0
 **************************/
 
 --RELATION_SOURCE_DESC
-	relationship.elcn_type	Relationship,
-	relationship.fullname Relation_Name,
+	prt.elcn_type	Relationship,
+	spouse_p.fullname Relation_Name,
 
 --COMBINED_MAILING_PRIORITY
-	CASE relationship.elcn_jointmailing 
+	CASE spouse_link.elcn_jointmailing 
 		WHEN 1 THEN 'Y'
 		ELSE null
 	END Joint_Mailing,
@@ -667,35 +667,33 @@ SPEC_PURPOSE_GROUP_DESC
 --VETERAN_IND
 --GURIDEN_DESC
 	activities.alist ACTIVITIES
-
+--;select * 
 FROM(
-	SELECT
-		contactbase.*,
-		elcn_anonymitytypeBase.elcn_type anonymityType
-	FROM
-		ContactBase
-		LEFT JOIN elcn_anonymitytypebase 
-			ON contactbase.elcn_AnonymityTypeId = elcn_anonymitytypeBase.elcn_anonymitytypeId
-	WHERE
-		fullname not like '%DO%NOT%USE'
+		SELECT
+			contactbase.*,
+			elcn_anonymitytypeBase.elcn_type anonymityType
+		FROM
+			ContactBase
+			LEFT JOIN elcn_anonymitytypebase 
+				ON contactbase.elcn_AnonymityTypeId = elcn_anonymitytypeBase.elcn_anonymitytypeId
+		WHERE
+			fullname not like '%DO%NOT%USE'
+--and datatel_EnterpriseSystemId = 'N00149571' -- family test
 	) cb
 
-	LEFT JOIN(
-		SELECT
-			elcn_personid, elcn_ratingvalue 
-		FROM
-			elcn_ratingBase 
-		WHERE
-			elcn_ratingtypeid =  'ED5B6EEF-4798-44F9-878C-CA21057C1B72' -- JFSG Est Capacity-DonorSearch
-			AND elcn_RatingDescription = 'Value'
-			AND statuscode =1
-	) JFSG_EST_CAP ON cb.ContactId = jfsg_est_cap.elcn_personid  
-
-LEFT JOIN elcn_personalrelationshipBase spouse_r ON spouse_r.elcn_Person1Id = cb.ContactId
-		AND spouse_r.elcn_RelationshipType1ID = '4F665855-A3B8-E911-80D8-0a253F89019C' /*Spouse / Partner */
-		AND spouse_r.statuscode = 1
-
-LEFT JOIN ContactBase spouse_p ON spouse_p.ContactId = spouse_r.elcn_Person2Id
+	LEFT JOIN elcn_personalrelationshipBase SPOUSE_LINK -- includes elcn_jointmailing
+		ON spouse_link.elcn_Person1Id = cb.ContactId
+			AND spouse_link.elcn_RelationshipType1ID IN ( '42295D4F-A6EE-E411-942F-005056804B43' , /*Spouse*/
+														'4F665855-A3B8-E911-80D8-0A253F89019C', /*Spouse / Partner*/
+														'62295D4F-A6EE-E411-942F-005056804B43', /*Domestic Partner*/
+														'43665855-A3B8-E911-80D8-0A253F89019C')	/*Life Partner*/
+			AND (elcn_EndDate is null
+				OR elcn_EndDate > GETDATE())
+			AND spouse_link.statuscode = 1
+	LEFT JOIN elcn_personalrelationshiptype prt 
+		ON spouse_link.elcn_RelationshipType1Id  = prt.elcn_personalrelationshiptypeid 
+	LEFT JOIN ContactBase spouse_p 
+		ON spouse_p.ContactId = spouse_link.elcn_Person2Id
 
 JOIN elcn_constituentaffiliationBase cab ON cab.elcn_constituentaffiliationId = cb.elcn_primaryconstituentaffiliationid
 
@@ -776,6 +774,17 @@ LEFT JOIN #temp_education edu_3 on edu_3.elcn_PersonId = cb.ContactID and edu_3.
 			w_get_longest_consec_years
 		GROUP BY personid
 		)LONGEST_CONSEC on cb.contactid = longest_consec.personid
+
+	LEFT JOIN(
+		SELECT
+			elcn_personid, elcn_ratingvalue 
+		FROM
+			elcn_ratingBase 
+		WHERE
+			elcn_ratingtypeid =  'ED5B6EEF-4798-44F9-878C-CA21057C1B72' -- JFSG Est Capacity-DonorSearch
+			AND elcn_RatingDescription = 'Value'
+			AND statuscode =1
+	) JFSG_EST_CAP ON cb.ContactId = jfsg_est_cap.elcn_personid  
 	
 	LEFT JOIN(
 		SELECT
@@ -908,20 +917,6 @@ LEFT JOIN #temp_education edu_3 on edu_3.elcn_PersonId = cb.ContactID and edu_3.
 
 	LEFT JOIN(
 		SELECT
-			prb.elcn_person1id,
-			prt.elcn_type,
-			contactbase.fullname,
-			elcn_JointMailing			
-		FROM
-			elcn_personalrelationshipBase prb
-			LEFT JOIN elcn_personalrelationshiptype prt on elcn_RelationshipType1Id  = elcn_personalrelationshiptypeid 
-			LEFT JOIN contactbase on prb.elcn_person2id = contactbase.contactid
-		WHERE
-			prb.statuscode = 1
-	)RELATIONSHIP ON cb.contactid = relationship.elcn_person1id
-
-	LEFT JOIN(
-		SELECT
 			elcn_personid,
 			elcn_JobTitle, 
 			elcn_OrganizationIdName,
@@ -945,5 +940,4 @@ LEFT JOIN #temp_education edu_3 on edu_3.elcn_PersonId = cb.ContactID and edu_3.
 	)ACTIVITIES ON cb.contactid = activities.elcn_personid 		
 WHERE
 cb.statuscode =1
---AND cb.ContactId = '85141532-F9E5-4037-8737-F11B103E4E0D'
 ;
