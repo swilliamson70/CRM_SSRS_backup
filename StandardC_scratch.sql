@@ -949,3 +949,7 @@ SELECT TOP 1
 		WHERE
 			salu.salu_code = 'SIFE'
 			and elcn_personid = 'F846C523-8AD2-4676-8B52-0000196F89FC';
+
+select * from INFORMATION_SCHEMA.TABLES  where upper(table_name) like '%FILTERED%' order by table_name;
+
+select * from Filteredelcn_contribution;

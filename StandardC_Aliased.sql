@@ -1,6 +1,6 @@
 ﻿DECLARE 
-	@p_StartDate date
-	, @p_EndDate date;
+	@p_StartDate date,
+	@p_EndDate date;
 
 SELECT
 	e.elcn_PersonID,

@@ -14,6 +14,14 @@
     <DataSet Name="ds_standardConstituent">
       <Query>
         <DataSourceName>MSCRM_DataSource</DataSourceName>
+        <QueryParameters>
+          <QueryParameter Name="@p_StartDate">
+            <Value>=Parameters!p_StartDate.Value</Value>
+          </QueryParameter>
+          <QueryParameter Name="@p_EndDate">
+            <Value>=Parameters!p_EndDate.Value</Value>
+          </QueryParameter>
+        </QueryParameters>
         <CommandText>SELECT
 	e.elcn_PersonID,
 	e.elcn_educationid,
@@ -396,7 +404,7 @@ SELECT
 															344220001, -- Pledge
 															344220004, -- Matching Gift
 															344220005) -- Bequest Expectancy
-			--and elcn_contributiondonorBase.elcn_ContributionDate BETWEEN @p_StartDate AND @p_EndDate
+			and elcn_contributiondonorBase.elcn_ContributionDate BETWEEN @p_StartDate AND @p_EndDate
 		) Lifetime_Number_of_Gifts, --TOTAL_NO_GIFTS
 
 	cb.elcn_LargestContributionAmount Largest_Contribution_Amount, -- HIGH_GIFT_AMT
@@ -541,7 +549,7 @@ SELECT
 			elcn_contributiondonorBase.elcn_person = cb.ContactId
 			AND elcn_contributionBase.statuscode = 1
 			AND elcn_contribution.elcn_contributionType = 344220003 -- Pledge Payment
-			--AND elcn_contributiondonorBase.elcn_ContributionDate BETWEEN @p_StartDate AND @p_EndDate
+			AND elcn_contributiondonorBase.elcn_ContributionDate BETWEEN @p_StartDate AND @p_EndDate
 			AND elcn_contributiondonorBase.elcn_AssociationTypeId = '36FA0E30-6248-E411-941F-0050568068B8' -- Primary only, If incl Spouse, would need to include Group/Joint
 	) Total_Pledge_Payments, --Total Pledge Payments
 
@@ -562,7 +570,7 @@ SELECT
 															344220001, -- Pledge
 															344220004, -- Matching Gift
 															344220005) -- Bequest Expectancy
-			--and elcn_contributiondonorBase.elcn_ContributionDate BETWEEN @p_StartDate AND @p_EndDate
+			and elcn_contributiondonorBase.elcn_ContributionDate BETWEEN @p_StartDate AND @p_EndDate
 	) Total_Giving,
 
 		(
@@ -596,7 +604,7 @@ SELECT
 															344220001, -- Pledge
 															344220004, -- Matching Gift
 															344220005) -- Bequest Expectancy
-			--and elcn_contributiondonorBase.elcn_ContributionDate BETWEEN @p_StartDate AND @p_EndDate
+			and elcn_contributiondonorBase.elcn_ContributionDate BETWEEN @p_StartDate AND @p_EndDate
 	) Total_Premiums,
 
 	(
@@ -630,7 +638,7 @@ SELECT
 															344220001, -- Pledge
 															344220004, -- Matching Gift
 															344220005) -- Bequest Expectancy
-			--and elcn_contributiondonorBase.elcn_ContributionDate BETWEEN @p_StartDate AND @p_EndDate
+			and elcn_contributiondonorBase.elcn_ContributionDate BETWEEN @p_StartDate AND @p_EndDate
 	) Total_Fair_Market_Value, --Total Fair Market Value (For given date range)
 
 
@@ -8375,10 +8383,33 @@ cb.statuscode =1
       </Page>
     </ReportSection>
   </ReportSections>
+  <ReportParameters>
+    <ReportParameter Name="p_StartDate">
+      <DataType>DateTime</DataType>
+      <Prompt>p Start Date</Prompt>
+      <UsedInQuery>True</UsedInQuery>
+    </ReportParameter>
+    <ReportParameter Name="p_EndDate">
+      <DataType>DateTime</DataType>
+      <Prompt>p End Date</Prompt>
+    </ReportParameter>
+  </ReportParameters>
   <ReportParametersLayout>
     <GridLayoutDefinition>
       <NumberOfColumns>4</NumberOfColumns>
       <NumberOfRows>2</NumberOfRows>
+      <CellDefinitions>
+        <CellDefinition>
+          <ColumnIndex>0</ColumnIndex>
+          <RowIndex>0</RowIndex>
+          <ParameterName>p_StartDate</ParameterName>
+        </CellDefinition>
+        <CellDefinition>
+          <ColumnIndex>1</ColumnIndex>
+          <RowIndex>0</RowIndex>
+          <ParameterName>p_EndDate</ParameterName>
+        </CellDefinition>
+      </CellDefinitions>
     </GridLayoutDefinition>
   </ReportParametersLayout>
   <Language>en-US</Language>

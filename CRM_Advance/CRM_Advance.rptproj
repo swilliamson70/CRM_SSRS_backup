@@ -6,7 +6,7 @@
     <ErrorLevel>2</ErrorLevel>
     <OverwriteDatasets>False</OverwriteDatasets>
     <OverwriteDataSources>False</OverwriteDataSources>
-    <TargetServerVersion>SSRS2016</TargetServerVersion>
+    <TargetServerVersion>SSRS2008R2</TargetServerVersion>
     <Platform>Win32</Platform>
     <TargetReportFolder>CRM_Advance</TargetReportFolder>
     <TargetDatasetFolder>Datasets</TargetDatasetFolder>
@@ -53,11 +53,12 @@
   </ItemGroup>
   <ItemGroup>
     <Report Include="ConstituentProfileReport.rdl" />
+    <Report Include="ContributionReport.rdl" />
+    <Report Include="cramf_test.rdl" />
     <Report Include="Endowment.rdl" />
     <Report Include="EndowmentValuationTable.rdl" />
     <Report Include="Lybunt.rdl" />
     <Report Include="NSUOK_ContribLybunt.rdl" />
-    <Report Include="Report1.rdl" />
     <Report Include="Standard_Constituent.rdl" />
     <Report Include="StringMapBase test.rdl" />
   </ItemGroup>
