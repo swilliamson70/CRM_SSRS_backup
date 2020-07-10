@@ -43,7 +43,9 @@ SELECT
 		WHEN '89799F16-C4E8-4269-B409-5756998F193F' THEN 'CIFL'
 		ELSE cast(elcn_typeid as varchar(40))
 	END AS SALU_CODE,
-	elcn_formattedname
+	elcn_formattedname,
+	elcn_locked, 
+	modifiedon 
 INTO
 	#temp_aprsalu
 FROM
@@ -55,11 +57,6 @@ WHERE
 		    			'89799F16-C4E8-4269-B409-5756998F193F') --Casual Joint Saluation (CIFL)
 	AND (elcn_enddate &gt;= SYSDATETIME() 
 		OR elcn_enddate IS NULL)
-ORDER BY 
-	elcn_personid, 
-	elcn_typeid, 
-	elcn_locked desc, 
-	modifiedon desc
 ;
 CREATE NONCLUSTERED INDEX INDX_TMP_ID_SALU ON #temp_aprsalu (elcn_personId,salu_code);
 
@@ -652,23 +649,20 @@ LIFETIME_HOUSEHOLD_GIVING -- Householding tools in CRM 3.0
 		ELSE null
 	END Joint_Mailing,
 
-	edu_1.Degree Degree1_Degree, --DEGREE_1
-	edu_1.Degree_Name AS Degree1_Degree_Desc,--DEGREE_DESC_1
-	--MAJOR_1 -- program codes are not mapped from APRAMAJ
-	edu_1.Major AS Degree1_Major, --MAJOR_DESC_1
-	edu_1.Degree_Year Degree1_Degree_Year, --DEGREE_YEAR_1
+	edu_1.Degree Degree1_Degree, 
+	edu_1.Degree_Name AS Degree1_Degree_Desc,
+	edu_1.Major AS Degree1_Major, 
+	edu_1.Degree_Year Degree1_Degree_Year, 
 
-	edu_2.Degree Degree2_Degree, --DEGREE_2
-	edu_2.Degree_Name AS Degree2_Degree_Desc,--DEGREE_DESC_2
---MAJOR_2
-	edu_2.Major AS Degree2_Major,--MAJOR_DESC_2
-	edu_2.Degree_Year Degree2_Degree_Year, --DEGREE_YEAR_2
+	edu_2.Degree Degree2_Degree, 
+	edu_2.Degree_Name AS Degree2_Degree_Desc,
+	edu_2.Major AS Degree2_Major,
+	edu_2.Degree_Year Degree2_Degree_Year, 
 
-	edu_3.Degree Degree3_Degree,--DEGREE_3
-	edu_3.Degree_Name AS Degree3_Degree_Desc,--DEGREE_DESC_3
---MAJOR_3
-	edu_3.Major AS Degree3_Major,--MAJOR_DESC_3
-	edu_3.Degree_Year Degree3_Degree_Year, --DEGREE_YEAR_3
+	edu_3.Degree Degree3_Degree,
+	edu_3.Degree_Name AS Degree3_Degree_Desc,
+	edu_3.Major AS Degree3_Major,
+	edu_3.Degree_Year Degree3_Degree_Year, 
 
 /* APRPROS not in mapping spreadsheet
 SPEC_PURPOSE_TYPE -- place of work 
@@ -683,7 +677,7 @@ SPEC_PURPOSE_GROUP_DESC
 --VETERAN_IND
 --GURIDEN_DESC
 	activities.alist ACTIVITIES
---;select * 
+--;select *
 FROM(
 		SELECT
 			contactbase.*,
@@ -711,7 +705,7 @@ FROM(
 	LEFT JOIN ContactBase spouse_p 
 		ON spouse_p.ContactId = spouse_link.elcn_Person2Id
 
-JOIN elcn_constituentaffiliationBase cab ON cab.elcn_constituentaffiliationId = cb.elcn_primaryconstituentaffiliationid
+	LEFT JOIN elcn_constituentaffiliationBase cab ON cab.elcn_constituentaffiliationId = cb.elcn_primaryconstituentaffiliationid
 
 	LEFT JOIN(
 		SELECT 
@@ -727,6 +721,55 @@ JOIN elcn_constituentaffiliationBase cab ON cab.elcn_constituentaffiliationId = 
 
 		) ctb ON ctb.elcn_constituenttypeID = cab.elcn_ConstituentTypeId
 
+	LEFT JOIN(
+		SELECT
+			elcn_personid,
+			elcn_formattedname,
+			ROW_NUMBER() OVER (PARTITION BY elcn_personid ORDER BY elcn_locked DESC, modifiedon DESC) RN
+		FROM
+			#temp_aprsalu salu
+		WHERE
+			salu.salu_code = 'CIFE'
+		) CIFE_SALU 
+			ON cb.contactid = cife_salu.elcn_personid
+			AND cife_salu.rn = 1
+	LEFT JOIN(
+		SELECT
+			elcn_personid,
+			elcn_formattedname,
+			ROW_NUMBER() OVER (PARTITION BY elcn_personid ORDER BY elcn_locked DESC, modifiedon DESC) RN
+		FROM
+			#temp_aprsalu salu
+		WHERE
+			salu.salu_code = 'SIFE'
+		) SIFE_SALU 
+			ON cb.contactid = sife_salu.elcn_personid
+			AND sife_salu.rn = 1
+	LEFT JOIN(
+		SELECT 
+			elcn_personid,
+			elcn_formattedname,
+			ROW_NUMBER() OVER (PARTITION BY elcn_personid ORDER BY elcn_locked DESC, modifiedon DESC) RN
+		FROM
+			#temp_aprsalu salu
+		WHERE
+			salu.salu_code = 'CIFL'
+		) CIFL_SALU 
+			ON cb.contactid = cifl_salu.elcn_personid
+			AND cifl_salu.rn = 1
+	LEFT JOIN(
+		SELECT 
+			elcn_personid,
+			elcn_formattedname,
+			ROW_NUMBER() OVER (PARTITION BY elcn_personid ORDER BY elcn_locked DESC, modifiedon DESC) RN
+		FROM
+			#temp_aprsalu salu
+		WHERE
+			salu.salu_code = 'SIFL'
+		) SIFL_SALU 
+			ON cb.contactid = sifl_salu.elcn_personid
+			AND sifl_salu.rn = 1
+
 LEFT JOIN elcn_addressassociationBase aab ON aab.elcn_personId = cb.ContactId AND aab.elcn_Preferred =1
 
 LEFT JOIN elcn_addressBase ab ON ab.elcn_addressId = aab.elcn_AddressId
@@ -737,42 +780,6 @@ LEFT JOIN elcn_addresstypeBase atb ON atb.elcn_addresstypeId = aab.elcn_AddressT
 LEFT JOIN #temp_education edu_1 on edu_1.elcn_PersonId = cb.ContactID and edu_1.rank_no = 1
 LEFT JOIN #temp_education edu_2 on edu_2.elcn_PersonId = cb.ContactID and edu_2.rank_no = 2
 LEFT JOIN #temp_education edu_3 on edu_3.elcn_PersonId = cb.ContactID and edu_3.rank_no = 3
-	LEFT JOIN(
-		SELECT TOP 1
-			elcn_personid,
-			elcn_formattedname
-		FROM
-			#temp_aprsalu salu
-		WHERE
-			salu.salu_code = 'CIFE'
-		) CIFE_SALU ON cb.contactid = cife_salu.elcn_personid
-	LEFT JOIN(
-		SELECT TOP 1
-			elcn_personid,
-			elcn_formattedname
-		FROM
-			#temp_aprsalu salu
-		WHERE
-			salu.salu_code = 'SIFE'
-		) SIFE_SALU ON cb.contactid = sife_salu.elcn_personid
-	LEFT JOIN(
-		SELECT TOP 1
-			elcn_personid,
-			elcn_formattedname
-		FROM
-			#temp_aprsalu salu
-		WHERE
-			salu.salu_code = 'CIFL'
-		) CIFL_SALU ON cb.contactid = cifl_salu.elcn_personid
-	LEFT JOIN(
-		SELECT TOP 1
-			elcn_personid,
-			elcn_formattedname
-		FROM
-			#temp_aprsalu salu
-		WHERE
-			salu.salu_code = 'SIFL'
-		) SIFL_SALU ON cb.contactid = sifl_salu.elcn_personid
 
 	LEFT JOIN(
 		SELECT

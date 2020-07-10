@@ -147,7 +147,7 @@ FROM
 		ON fab.elcn_financialawardId = farb.elcn_FinancialAwardId
 		AND TRIM(farb.elcn_AwardTerm) like ('%'+@p_year) -- ('Summer 2019','Fall 2019','Spring 2020')
 	LEFT JOIN contactbase SCHOLAR
-		ON drb.elcn_personid = scholar.contactid
+		ON farb.elcn_personid = scholar.contactid
 
 --&gt;&gt; Endowment Values
 	LEFT JOIN(
@@ -171,7 +171,8 @@ FROM
 	) EDVAL ON db.elcn_designationid = edval.elcn_designationId
 		AND edval.rn = 1 -- Most recent valuation
 
-order by db.elcn_code;</CommandText>
+order by db.elcn_code
+;</CommandText>
       </Query>
       <Fields>
         <Field Name="Designation">

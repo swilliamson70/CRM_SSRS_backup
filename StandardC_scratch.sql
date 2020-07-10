@@ -908,3 +908,44 @@ Past	3848E79E-4B7F-4CAC-83C5-D8562CADBAD9	Surviving Domestic Partner
 Past	3848E79E-4B7F-4CAC-83C6-D8562CADBAD9	Late Domestic Partner
 Past	3848E79E-4B7F-4CAC-83C7-D8562CADBAD9	Ex-Domestic Partner*/
 select * from elcn_personalrelationshipBase ;
+
+SELECT 
+	elcn_personid,
+	CASE elcn_typeid 
+		WHEN '1172C46B-462D-E411-9415-005056804B43' THEN 'CIFE'
+		WHEN '0F72C46B-462D-E411-9415-005056804B43' THEN 'SIFE'
+		WHEN '1B72C46B-462D-E411-9415-005056804B43' THEN 'SIFL'
+		WHEN '89799F16-C4E8-4269-B409-5756998F193F' THEN 'CIFL'
+		ELSE cast(elcn_typeid as varchar(40))
+	END AS SALU_CODE,
+	elcn_formattedname
+INTO
+	#temp_aprsalu
+FROM
+	elcn_formattednamebase
+WHERE
+	elcn_typeid in ('1172C46B-462D-E411-9415-005056804B43', -- Joint Mailing Name (CIFE)
+			    		'0F72C46B-462D-E411-9415-005056804B43', --Mailing Name (SIFE)
+	     				'1B72C46B-462D-E411-9415-005056804B43', --Casual Salutation (SIFL)
+		    			'89799F16-C4E8-4269-B409-5756998F193F') --Casual Joint Saluation (CIFL)
+	AND (elcn_enddate >= SYSDATETIME() 
+		OR elcn_enddate IS NULL)
+ORDER BY 
+	elcn_personid, 
+	elcn_typeid, 
+	elcn_locked desc, 
+	modifiedon desc
+;
+CREATE NONCLUSTERED INDEX INDX_TMP_ID_SALU ON #temp_aprsalu (elcn_personId,salu_code);
+
+select * from elcn_formattednamebase;
+
+select * from #temp_aprsalu where elcn_personid = 'F846C523-8AD2-4676-8B52-0000196F89FC';
+SELECT TOP 1
+			elcn_personid,
+			elcn_formattedname
+		FROM
+			#temp_aprsalu salu
+		WHERE
+			salu.salu_code = 'SIFE'
+			and elcn_personid = 'F846C523-8AD2-4676-8B52-0000196F89FC';

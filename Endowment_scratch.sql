@@ -83,7 +83,7 @@ elcn_StartDate	NULL
 */
 select * from elcn_designationbase where elcn_designationid = '3A7A2CC7-B94B-4230-BF4D-712D5A496AD5';
 
-
+select * from elcn_designationrelationshipBase;
 
 
 

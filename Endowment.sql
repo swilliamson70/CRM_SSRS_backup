@@ -132,7 +132,7 @@ FROM
 		ON fab.elcn_financialawardId = farb.elcn_FinancialAwardId
 		AND TRIM(farb.elcn_AwardTerm) like ('%'+@p_year) -- ('Summer 2019','Fall 2019','Spring 2020')
 	LEFT JOIN contactbase SCHOLAR
-		ON drb.elcn_personid = scholar.contactid
+		ON farb.elcn_personid = scholar.contactid
 
 -->> Endowment Values
 	LEFT JOIN(
