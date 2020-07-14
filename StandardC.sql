@@ -1,6 +1,7 @@
 ﻿DECLARE 
 	@p_StartDate date
-	, @p_EndDate date;
+	, @p_EndDate date
+	, @p_stateList varchar(10) = 'OK';
 
 SELECT
 	e.elcn_PersonID,
@@ -676,8 +677,18 @@ FROM(
 				ON contactbase.elcn_AnonymityTypeId = elcn_anonymitytypeBase.elcn_anonymitytypeId
 		WHERE
 			fullname not like '%DO%NOT%USE'
---and datatel_EnterpriseSystemId = 'N00149571' -- family test
 	) cb
+
+	JOIN elcn_addressassociationBase aab 
+		ON aab.elcn_personId = cb.ContactId 
+		AND aab.elcn_Preferred =1
+	JOIN elcn_addressBase ab 
+		ON ab.elcn_addressId = aab.elcn_AddressId
+	JOIN elcn_stateprovinceBase spb 
+		ON spb.elcn_stateprovinceId = ab.elcn_StateProvinceId 
+		AND spb.elcn_stateprovinceId in (@p_stateList)
+	JOIN Datatel_countryBase dcb ON dcb.Datatel_countryId = ab.elcn_country
+	JOIN elcn_addresstypeBase atb ON atb.elcn_addresstypeId = aab.elcn_AddressTypeId
 
 	LEFT JOIN elcn_personalrelationshipBase SPOUSE_LINK -- includes elcn_jointmailing
 		ON spouse_link.elcn_Person1Id = cb.ContactId
@@ -685,8 +696,8 @@ FROM(
 														'4F665855-A3B8-E911-80D8-0A253F89019C', /*Spouse / Partner*/
 														'62295D4F-A6EE-E411-942F-005056804B43', /*Domestic Partner*/
 														'43665855-A3B8-E911-80D8-0A253F89019C')	/*Life Partner*/
-			AND (elcn_EndDate is null
-				OR elcn_EndDate > GETDATE())
+			AND (spouse_link.elcn_EndDate is null
+				OR spouse_link.elcn_EndDate > GETDATE())
 			AND spouse_link.statuscode = 1
 	LEFT JOIN elcn_personalrelationshiptype prt 
 		ON spouse_link.elcn_RelationshipType1Id  = prt.elcn_personalrelationshiptypeid 
@@ -758,13 +769,6 @@ FROM(
 			ON cb.contactid = sifl_salu.elcn_personid
 			AND sifl_salu.rn = 1
 
-LEFT JOIN elcn_addressassociationBase aab ON aab.elcn_personId = cb.ContactId AND aab.elcn_Preferred =1
-
-LEFT JOIN elcn_addressBase ab ON ab.elcn_addressId = aab.elcn_AddressId
-
-LEFT JOIN elcn_stateprovinceBase spb ON spb.elcn_stateprovinceId = ab.elcn_StateProvinceId
-LEFT JOIN Datatel_countryBase dcb ON dcb.Datatel_countryId = ab.elcn_country
-LEFT JOIN elcn_addresstypeBase atb ON atb.elcn_addresstypeId = aab.elcn_AddressTypeId
 LEFT JOIN #temp_education edu_1 on edu_1.elcn_PersonId = cb.ContactID and edu_1.rank_no = 1
 LEFT JOIN #temp_education edu_2 on edu_2.elcn_PersonId = cb.ContactID and edu_2.rank_no = 2
 LEFT JOIN #temp_education edu_3 on edu_3.elcn_PersonId = cb.ContactID and edu_3.rank_no = 3

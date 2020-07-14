@@ -736,7 +736,7 @@ where datepart(YYYY,elcn_ContributionDate) =  @donationYear ;
 select count(*) from Contactbase where datatel_enterprisesystemid is null --20846
 select count(*) from ContactBase --105850
 
-
+;
 
 UPDATE su
 
@@ -745,9 +745,9 @@ SET su.domainname = 'sql\nsudevuser'
 SELECT su.domainname, su.fullname
 --select * 
 FROM systemuserbase su
-order by 1
-WHERE su.domainname = 'willi204@nsuok.edu'
 
+WHERE su.domainname = 'willi204@nsuok.edu'
+order by 1;
 update su
 set su.domainname = 'sql\nsudevuser'
 --select su.domainname, su.fullname
@@ -953,3 +953,8 @@ SELECT TOP 1
 select * from INFORMATION_SCHEMA.TABLES  where upper(table_name) like '%FILTERED%' order by table_name;
 
 select * from Filteredelcn_contribution;
+
+-->> parms
+
+select elcn_abbreviation+'-'+elcn_name state_val, elcn_stateprovinceId from elcn_stateprovinceBase
+where elcn_Abbreviation = 'OK';
