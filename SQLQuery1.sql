@@ -36,7 +36,11 @@
 
 DECLARE @p_StartDate date = '01-JAN-2019'
 	, @p_EndDate date = '31-DEC-2019';
+
+
 -- >> Gift in Kind
+
+-- first attempt - does not work
 SELECT
 	contactbase.datatel_EnterpriseSystemId bannerid
 	, gik.SUM_P
@@ -67,25 +71,60 @@ from contactbase
 where contactbase.datatel_EnterpriseSystemId = 'N00119775'
 ;
 
---select * from elcn_contributiondonorbase; --elcn_CapitalCampaignId = 9E2AD114-D338-EA11-80D9-0A253F89019C
---select elcn_capitalcampaignid,elcn_name from elcn_capitalcampaign; -- where elcn_capitalcampaignid = '9E2AD114-D338-EA11-80D9-0A253F89019C';
-/*elcn_capitalcampaignid	elcn_name
-842746E8-D238-EA11-80D9-0A253F89019C	Annual Fund
-DA10F3AB-47DB-4051-86B3-E0583D6FB611	Cappi Wadley R and T Center
-C4B5B8FA-D238-EA11-80D9-0A253F89019C	CrowdFunding
-9E2AD114-D338-EA11-80D9-0A253F89019C	Employee Giving
-79E6B242-D338-EA11-80D9-0A253F89019C	End of Year
-DAEC9C0E-032F-44DB-8F23-4E5DA992781E	ENSURING Our Future
-57AAE304-4178-4AB5-A1C9-80EBC18CD5DF	Gifts In Anticip New Campaign
-25F4B9F3-3D93-468B-B41C-47AC8351E662	NSU OCO - Embrace the Vision
-CF0C641A-A01A-4779-A355-2B062669FDE8	Pr-Banner Campaign
-5DEAE671-F302-4EFB-A100-83A8D7C40DA7	Second Century Campaign
-C3846459-D338-EA11-80D9-0A253F89019C	Show Your GRADitude*/
 
---select * from elcn_contribution; -- elcn_ContributionCategoryId = '3A0E5F1A-A483-E911-80D7-0A253F89019C'
---select elcn_ContributionCategoryId,elcn_name from elcn_contributioncategory;-- where elcn_ContributionCategoryId = '3A0E5F1A-A483-E911-80D7-0A253F89019C';
-/*elcn_ContributionCategoryId	elcn_name
-D1214444-C30B-420D-A948-E363A4AC882C	Annual Fund Pledge
+select * from contactbase where contactbase.datatel_EnterpriseSystemId = 'N00119775'; -- contactid = '1934A959-029E-41C3-8C9E-4623CF6EAA9C'
+
+--Top of 2nd attempt
+
+select  cb.datatel_EnterpriseSystemId
+	, gift1.elcn_person
+	, gift1.g1sum
+	, prb.elcn_primaryspouseid
+	, gift2.elcn_person
+	, gift2.g2sum
+	, coalesce(gift1.g1sum,0) + coalesce(gift2.g2sum,0) summ 
+from (
+	select cdb.elcn_person, sum(cdb.elcn_amount) g1sum 
+	from elcn_contributiondonorbase cdb
+		join elcn_contributionbase cb 
+			on cdb.elcn_contribution = cb.elcn_contributionid 
+	where 
+		cb.elcn_contributioncategoryid = '0725BFE3-4182-E911-80D9-0A4D82C48A30' /*Gift-In-Kind Gift*/
+		and cdb.elcn_contributiondate between '01-JAN-2019' and '31-DEC-2019'
+	group by cdb.elcn_person
+	) gift1	left join elcn_personalrelationshipBase prb
+		on gift1.elcn_person = prb.elcn_Person1Id
+
+		-->>-- and add a date check for enddate is either null or > systemdate
+
+	left join(
+		select 
+			cdb.elcn_person
+			, sum(cdb.elcn_amount) g2sum 
+		from elcn_contributiondonorbase cdb
+			join elcn_contributionbase cb 
+				on cdb.elcn_contribution = cb.elcn_contributionid 
+		where 
+			cb.elcn_contributioncategoryid = '0725BFE3-4182-E911-80D9-0A4D82C48A30' /*Gift-In-Kind Gift*/
+			and cdb.elcn_contributiondate between '01-JAN-2019' and '31-DEC-2019'
+		group by 
+			cdb.elcn_person
+	) gift2
+		on prb.elcn_Person2Id = gift2.elcn_person
+
+	join contactbase cb
+		on gift1.elcn_person = cb.ContactId
+
+	where cb.datatel_EnterpriseSystemId = 'N00036268'
+;
+
+select * from elcn_personalrelationshipbase where elcn_person1id = '21BCF35B-6CF9-44AF-8031-01EBBF53B70C'
+
+--odd one out elcn_designation = A3E15791-C268-41E9-8754-D4DDAEB0FFD5 -- Riverhawk Scholars Program
+select * from elcn_designationBase where elcn_designationid = 'A3E15791-C268-41E9-8754-D4DDAEB0FFD5';
+-- cb.elcn_contributioncategoryid = 3A0E5F1A-A483-E911-80D7-0A253F89019C, other 3 3A0E5F1A-A483-E911-80D7-0A253F89019C
+select elcn_contributioncategoryid,elcn_name from elcn_contributioncategory;-- where elcn_contributioncategoryid in ('3A0E5F1A-A483-E911-80D7-0A253F89019C','3A0E5F1A-A483-E911-80D7-0A253F89019C');
+/*D1214444-C30B-420D-A948-E363A4AC882C	Annual Fund Pledge
 7A0FBA75-4082-E911-80D9-0A4D82C48A30	Bequest  Pledge
 3F0E5F1A-A483-E911-80D7-0A253F89019C	Bequest Expectancy
 4574EE5D-4082-E911-80D9-0A4D82C48A30	Bequest Gift
@@ -129,3 +168,19 @@ A3646662-4382-E911-80D9-0A4D82C48A30	Payroll Deduction Pledge
 1E968F6E-2283-E911-80DA-0A4D82C48A30	Stocks/Security Payment
 3B0E5F1A-A483-E911-80D7-0A253F89019C	Straight Pledge
 4A0E5F1A-A483-E911-80D7-0A253F89019C	Testamentary Life Income Gift*/
+
+
+--select * from elcn_contributiondonorbase; --elcn_CapitalCampaignId = 9E2AD114-D338-EA11-80D9-0A253F89019C
+--select elcn_capitalcampaignid,elcn_name from elcn_capitalcampaign; -- where elcn_capitalcampaignid = '9E2AD114-D338-EA11-80D9-0A253F89019C';
+/*elcn_capitalcampaignid	elcn_name
+842746E8-D238-EA11-80D9-0A253F89019C	Annual Fund
+DA10F3AB-47DB-4051-86B3-E0583D6FB611	Cappi Wadley R and T Center
+C4B5B8FA-D238-EA11-80D9-0A253F89019C	CrowdFunding
+9E2AD114-D338-EA11-80D9-0A253F89019C	Employee Giving
+79E6B242-D338-EA11-80D9-0A253F89019C	End of Year
+DAEC9C0E-032F-44DB-8F23-4E5DA992781E	ENSURING Our Future
+57AAE304-4178-4AB5-A1C9-80EBC18CD5DF	Gifts In Anticip New Campaign
+25F4B9F3-3D93-468B-B41C-47AC8351E662	NSU OCO - Embrace the Vision
+CF0C641A-A01A-4779-A355-2B062669FDE8	Pr-Banner Campaign
+5DEAE671-F302-4EFB-A100-83A8D7C40DA7	Second Century Campaign
+C3846459-D338-EA11-80D9-0A253F89019C	Show Your GRADitude*/
