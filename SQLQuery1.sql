@@ -106,6 +106,7 @@ from (
 				on cdb.elcn_contribution = cb.elcn_contributionid 
 		where 
 			cb.elcn_contributioncategoryid = '0725BFE3-4182-E911-80D9-0A4D82C48A30' /*Gift-In-Kind Gift*/
+--readd?	AND elcn_contributiondonorbase.elcn_capitalcampaignid = 'DAEC9C0E-032F-44DB-8F23-4E5DA992781E' /*ENSURING Our Future*/
 			and cdb.elcn_contributiondate between '01-JAN-2019' and '31-DEC-2019'
 		group by 
 			cdb.elcn_person
