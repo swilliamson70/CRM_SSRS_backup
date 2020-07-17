@@ -118,28 +118,30 @@ select * from filteredstringmap sm
 where sm.FilteredViewName = 'Filteredelcn_constituenttype'
 AND attributeName = 'elcn_category'
 and attributevalue = 344220000
+;
+select * from elcn_stateprovinceBase;
 
-select * from elcn_stateprovinceBase
-
-select * from elcn_addressBase
+select * from elcn_addressBase;
+select * from elcn_addressBase where elcn_postalcode like '74464'+'%';
 
 select * from Filteredstringmap sm
 where-- sm.FilteredViewName = 'Filteredelcn_contactpreferencetype'
 value like 'Com%'
 --AND attributeName = 'elcn_contactpreferencetype' 
 --and attributevalue = 344220000
+;
 select elcn_contactrestrictionid,elcn_name from elcn_contactrestrictionBase
 where elcn_contactrestrictionid = '8872A718-5472-40C4-82C7-DB72FC4CE5A6'
 select elcn_contactpreferencetypeid ,elcn_type from elcn_contactpreferencetypebase
 where elcn_contactpreferencetypeid = 'e4e02dc6-3314-e511-9431-005056804b43'
-
+;
 SELECT COUNT(*) FROM elcn_contactpreferenceBase cpb
 		WHERE cpb.elcn_ContactRestrictionId = '404E206F-9EB8-E911-80D8-0A253F89019C' /*Donation Anonymous*/
 		--AND (cpb.elcn_RestrictionLiftDate < CURRENT_TIMESTAMP OR cpb.elcn_RestrictionLiftDate IS NULL)
 		--AND cpb.elcn_ContactPreferenceStatusId = '378DE114-EB09-E511-943C-0050568068B7' /*Current*/
 		--AND cpb.elcn_personId = cb.ContactId
-
-select * from elcn_anonymitytypeBase
+;
+select * from elcn_anonymitytypeBase;
 
 -----RATINGS
 select elcn_ratingtypeid, elcn_type from elcn_ratingtypeBase
@@ -207,6 +209,7 @@ where elcn_personid = 'E9397505-12EC-42DD-94D3-DC5F3E089E80' and
 
 FROM
 	elcn_ratingBase
+where elcn_personid = '4651BF09-A860-48C0-846C-1590D5B2F152'
 --	JOIN elcn_ratingtypeBase
 	--	ON elcn_ratingbase.elcn_ratingtypeid = elcn_ratingtypebase.elcn_ratingtypeid
 --where elcn_ratingtypeid = '50F8230E-88F1-430A-9D2F-C370FDC81EE5' and
@@ -218,8 +221,8 @@ FROM
 	FOR elcn_ratingDescription  IN
 	([Value], [Level], [Score]) 
 ) PVT
-
-
+;
+select * from #temp_ratings ;
 		SELECT
 			ratings.elcn_personid,
 			ratings.elcn_ratingtypeid,
@@ -958,3 +961,42 @@ select * from Filteredelcn_contribution;
 
 select elcn_abbreviation+'-'+elcn_name state_val, elcn_stateprovinceId from elcn_stateprovinceBase
 where elcn_Abbreviation = 'OK';
+
+select * from elcn_stateprovincebase;
+
+select * from cvt_stvcnty;
+select * from INFORMATION_SCHEMA.TABLES  where upper(table_name) like '%STV%';
+
+DECLARE 
+	@p_StartDate date
+	, @p_EndDate date
+	, @p_stateList varchar(10) = 'B823CFDA-A383-E911-80D7-0A253F89019C'
+	, @p_zipcodeList varchar(9) = '74464'
+	, @p_cityname varchar(120) = 'Tah';
+ 
+
+select *
+FROM(
+		SELECT
+			contactbase.*,
+			elcn_anonymitytypeBase.elcn_type anonymityType
+		FROM
+			ContactBase
+			LEFT JOIN elcn_anonymitytypebase 
+				ON contactbase.elcn_AnonymityTypeId = elcn_anonymitytypeBase.elcn_anonymitytypeId
+		WHERE
+			fullname not like '%DO%NOT%USE'
+	) cb
+
+	JOIN elcn_addressassociationBase aab 
+		ON aab.elcn_personId = cb.ContactId 
+		AND aab.elcn_Preferred =1
+	JOIN elcn_addressBase ab 
+		ON ab.elcn_addressId = aab.elcn_AddressId
+		AND LEFT(ab.elcn_postalcode,5) IN (@p_zipcodeList)
+		AND ab.elcn_city like (@p_cityname + '%')
+	JOIN elcn_stateprovinceBase spb 
+		ON spb.elcn_stateprovinceId = ab.elcn_StateProvinceId 
+		--AND spb.elcn_stateprovinceId IN (@p_stateList)
+	JOIN Datatel_countryBase dcb ON dcb.Datatel_countryId = ab.elcn_country
+	JOIN elcn_addresstypeBase atb ON atb.elcn_addresstypeId = aab.elcn_AddressTypeId

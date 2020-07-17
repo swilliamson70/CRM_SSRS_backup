@@ -21,6 +21,12 @@
           <QueryParameter Name="@p_EndDate">
             <Value>=Parameters!p_EndDate.Value</Value>
           </QueryParameter>
+          <QueryParameter Name="@p_zipcodeList">
+            <Value>=Parameters!p_zipcodeList.Value</Value>
+          </QueryParameter>
+          <QueryParameter Name="@p_cityname">
+            <Value>=Parameters!p_cityname.Value</Value>
+          </QueryParameter>
           <QueryParameter Name="@p_stateList">
             <Value>=Parameters!p_stateList.Value</Value>
           </QueryParameter>
@@ -706,9 +712,11 @@ FROM(
 		AND aab.elcn_Preferred =1
 	JOIN elcn_addressBase ab 
 		ON ab.elcn_addressId = aab.elcn_AddressId
+		AND LEFT(ab.elcn_postalcode,5) IN (@p_zipcodeList)
+		AND ab.elcn_city like (@p_cityname + '%')
 	JOIN elcn_stateprovinceBase spb 
 		ON spb.elcn_stateprovinceId = ab.elcn_StateProvinceId 
-		AND spb.elcn_stateprovinceId in (@p_stateList)
+		AND spb.elcn_stateprovinceId IN (@p_stateList)
 	JOIN Datatel_countryBase dcb ON dcb.Datatel_countryId = ab.elcn_country
 	JOIN elcn_addresstypeBase atb ON atb.elcn_addresstypeId = aab.elcn_AddressTypeId
 
@@ -1404,7 +1412,7 @@ cb.statuscode =1
         <DataSourceName>MSCRM_DataSource</DataSourceName>
         <CommandText>select 
      elcn_abbreviation+'-'+elcn_name state_val
-     , elcn_stateprovinceId 
+     , elcn_stateprovinceId
 from
       elcn_stateprovinceBase</CommandText>
       </Query>
@@ -1416,6 +1424,22 @@ from
         <Field Name="elcn_stateprovinceId">
           <DataField>elcn_stateprovinceId</DataField>
           <rd:TypeName>System.Guid</rd:TypeName>
+        </Field>
+      </Fields>
+    </DataSet>
+    <DataSet Name="ds_zipcodes">
+      <Query>
+        <DataSourceName>MSCRM_DataSource</DataSourceName>
+        <CommandText>select distinct
+     left(elcn_postalcode,5) ZIP_CODE
+from 
+    elcn_addressbase
+order by 1</CommandText>
+      </Query>
+      <Fields>
+        <Field Name="ZIP_CODE">
+          <DataField>ZIP_CODE</DataField>
+          <rd:TypeName>System.String</rd:TypeName>
         </Field>
       </Fields>
     </DataSet>
@@ -8411,12 +8435,12 @@ from
   <ReportParameters>
     <ReportParameter Name="p_StartDate">
       <DataType>DateTime</DataType>
-      <Prompt>p Start Date</Prompt>
+      <Prompt>Giving Start Date*</Prompt>
       <UsedInQuery>True</UsedInQuery>
     </ReportParameter>
     <ReportParameter Name="p_EndDate">
       <DataType>DateTime</DataType>
-      <Prompt>p End Date</Prompt>
+      <Prompt>Giving End Date*</Prompt>
     </ReportParameter>
     <ReportParameter Name="p_stateList">
       <DataType>String</DataType>
@@ -8426,12 +8450,29 @@ from
           <ValueField>elcn_stateprovinceId</ValueField>
         </DataSetReference>
       </DefaultValue>
-      <Prompt>Select State(s):</Prompt>
+      <Prompt>Select State(s)*:</Prompt>
       <ValidValues>
         <DataSetReference>
           <DataSetName>ds_States</DataSetName>
           <ValueField>elcn_stateprovinceId</ValueField>
           <LabelField>state_val</LabelField>
+        </DataSetReference>
+      </ValidValues>
+      <MultiValue>true</MultiValue>
+    </ReportParameter>
+    <ReportParameter Name="p_zipcodeList">
+      <DataType>String</DataType>
+      <DefaultValue>
+        <DataSetReference>
+          <DataSetName>ds_zipcodes</DataSetName>
+          <ValueField>ZIP_CODE</ValueField>
+        </DataSetReference>
+      </DefaultValue>
+      <Prompt>Select Zip Codes*</Prompt>
+      <ValidValues>
+        <DataSetReference>
+          <DataSetName>ds_zipcodes</DataSetName>
+          <ValueField>ZIP_CODE</ValueField>
         </DataSetReference>
       </ValidValues>
       <MultiValue>true</MultiValue>
@@ -8456,6 +8497,11 @@ from
           <ColumnIndex>2</ColumnIndex>
           <RowIndex>0</RowIndex>
           <ParameterName>p_stateList</ParameterName>
+        </CellDefinition>
+        <CellDefinition>
+          <ColumnIndex>3</ColumnIndex>
+          <RowIndex>0</RowIndex>
+          <ParameterName>p_zipcodeList</ParameterName>
         </CellDefinition>
       </CellDefinitions>
     </GridLayoutDefinition>

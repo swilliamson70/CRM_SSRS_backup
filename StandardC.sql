@@ -1,7 +1,10 @@
 ﻿DECLARE 
 	@p_StartDate date
 	, @p_EndDate date
-	, @p_stateList varchar(10) = 'OK';
+	, @p_stateList varchar(10) = 'B823CFDA-A383-E911-80D7-0A253F89019C'
+	, @p_zipcodeList varchar(9) = '74464'
+	, @p_cityname varchar(120) = 'Tah'
+;
 
 SELECT
 	e.elcn_PersonID,
@@ -356,6 +359,8 @@ SELECT
 	cb.anonymityType Anonymity_Type,
 
 --->> RATINGS
+	jfsg_est_cap.value JFSG_Estimated_Capacity,
+
 	ratings1.rating_type RATING_TYPE1,
 	ratings1.rating_score RATING_AMOUNT1,
 	ratings1.rating_value RATING1,
@@ -390,8 +395,6 @@ SELECT
 
 	cb.elcn_LargestContributionAmount Largest_Contribution_Amount, -- HIGH_GIFT_AMT
 	CONVERT(VARCHAR,cb.elcn_LastContributionDate,101) Last_Contibution_Date, -- LAST_GIFT_DATE 12/30/2006 format
-
-	jfsg_est_cap.elcn_ratingvalue JFSG_Estimated_Capacity,
 
 	(
 		SELECT
@@ -682,13 +685,17 @@ FROM(
 	JOIN elcn_addressassociationBase aab 
 		ON aab.elcn_personId = cb.ContactId 
 		AND aab.elcn_Preferred =1
-	JOIN elcn_addressBase ab 
+	JOIN elcn_addressBase AB
 		ON ab.elcn_addressId = aab.elcn_AddressId
+		AND LEFT(ab.elcn_postalcode,5) IN (@p_zipcodeList)
+		--AND ab.elcn_city like (@p_cityname + '%') -- too expensive
 	JOIN elcn_stateprovinceBase spb 
 		ON spb.elcn_stateprovinceId = ab.elcn_StateProvinceId 
-		AND spb.elcn_stateprovinceId in (@p_stateList)
-	JOIN Datatel_countryBase dcb ON dcb.Datatel_countryId = ab.elcn_country
-	JOIN elcn_addresstypeBase atb ON atb.elcn_addresstypeId = aab.elcn_AddressTypeId
+--AND spb.elcn_stateprovinceId IN (@p_stateList)
+	JOIN Datatel_countryBase dcb 
+		ON dcb.Datatel_countryId = ab.elcn_country
+	JOIN elcn_addresstypeBase atb 
+		ON atb.elcn_addresstypeId = aab.elcn_AddressTypeId
 
 	LEFT JOIN elcn_personalrelationshipBase SPOUSE_LINK -- includes elcn_jointmailing
 		ON spouse_link.elcn_Person1Id = cb.ContactId
@@ -792,49 +799,39 @@ LEFT JOIN #temp_education edu_3 on edu_3.elcn_PersonId = cb.ContactID and edu_3.
 
 	LEFT JOIN(
 		SELECT
-			elcn_personid, elcn_ratingvalue 
+			tr.elcn_personid
+			, tr.Value 
 		FROM
-			elcn_ratingBase 
+			#temp_ratings TR
 		WHERE
-			elcn_ratingtypeid =  'ED5B6EEF-4798-44F9-878C-CA21057C1B72' -- JFSG Est Capacity-DonorSearch
-			AND elcn_RatingDescription = 'Value'
-			AND statuscode =1
+			elcn_ratingtypeid =  '88C5BD4A-BF21-4635-B8BB-EBE956F2E5BD' -- JFSG Est Capacity-DonorSearch
 	) JFSG_EST_CAP ON cb.ContactId = jfsg_est_cap.elcn_personid  
-	
+
 	LEFT JOIN(
 		SELECT
-			contactbase.contactid, --ratings.elcn_personid,
-			ratings.elcn_ratingtypeid,
-			elcn_ratingtypeBase.elcn_type RATING_TYPE,
-			ratings.value RATING_VALUE,
-			ratings.level RATING_LEVEL,
-			ratings.score RATING_SCORE
-		FROM 
-			contactbase 
-				JOIN elcn_ratingtypebase 
-					ON elcn_ratingtypeid = '1BB294D5-53D7-4815-8963-096802773E6D'  -- JF Smith Group Top 500			 
-				LEFT JOIN #temp_ratings ratings
-					ON ratings.elcn_ratingtypeid = elcn_ratingtypebase.elcn_ratingtypeid
-					AND ratings.elcn_personid = contactbase.contactid
-		)RATINGS1 ON cb.contactid = ratings1.contactid 
-
-
-		LEFT JOIN(
-		SELECT
-			contactbase.contactid, --ratings.elcn_personid,
-			ratings.elcn_ratingtypeid,
-			elcn_ratingtypeBase.elcn_type RATING_TYPE,
-			ratings.value RATING_VALUE,
-			ratings.level RATING_LEVEL,
-			ratings.score RATING_SCORE
+			tr.elcn_personid 
+			, 'JF Smith Group Top 500' RATING_TYPE
+			, tr.value RATING_VALUE
+			, tr.level RATING_LEVEL
+			, tr.score RATING_SCORE
 		FROM
-			contactbase 
-				JOIN elcn_ratingtypebase 
-					on elcn_ratingtypeid = '3DE9ACBB-37E5-45AF-8902-2314FC2A9538' -- iWave Pro Score
-				LEFT JOIN #temp_ratings ratings
-					ON ratings.elcn_ratingtypeid = elcn_ratingtypebase.elcn_ratingtypeid
-					AND ratings.elcn_personid = contactbase.contactid
-		)RATINGS2 ON cb.contactid = ratings2.contactid 
+			#temp_ratings TR
+		WHERE	
+			elcn_ratingtypeid = '1BB294D5-53D7-4815-8963-096802773E6D'  -- JF Smith Group Top 500			 		
+		)RATINGS1 ON cb.contactid = ratings1.elcn_personid  
+
+	LEFT JOIN(
+		SELECT
+			tr.elcn_personid
+			, 'iWave Pro Score' RATING_TYPE
+			, tr.value RATING_VALUE
+			, tr.level RATING_LEVEL
+			, tr.score RATING_SCORE
+		FROM
+			#temp_ratings TR
+		WHERE	
+			elcn_ratingtypeid = '3DE9ACBB-37E5-45AF-8902-2314FC2A9538' -- iWave Pro Score
+		)RATINGS2 ON cb.contactid = ratings2.elcn_personid  
 
 	LEFT JOIN( -- general membership
 		SELECT
