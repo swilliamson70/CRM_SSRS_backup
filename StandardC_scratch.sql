@@ -1000,3 +1000,44 @@ FROM(
 		--AND spb.elcn_stateprovinceId IN (@p_stateList)
 	JOIN Datatel_countryBase dcb ON dcb.Datatel_countryId = ab.elcn_country
 	JOIN elcn_addresstypeBase atb ON atb.elcn_addresstypeId = aab.elcn_AddressTypeId
+
+-- filters
+-- primary spouse for unmarried?
+select * from contactbase where lastname  = 'Abbott' and firstname = 'Wyatt';  -- contactid = C1255100-DF2C-463D-8610-42191EFCADDB
+select * from elcn_personalrelationshipbase where elcn_person1id = 'C1255100-DF2C-463D-8610-42191EFCADDB';
+-- primary spouse 
+select * from contactbase where datatel_EnterpriseSystemId = 'N00151626'; -- 59A3438D-F6CB-4B21-B502-00162DE2CA86 todd
+select * from elcn_personalrelationshipbase where elcn_person1id = '59A3438D-F6CB-4B21-B502-00162DE2CA86';
+select * from contactbase where contactid = 'ADF14682-B4D0-4600-9A5D-4AEB5F98E418'; --paula
+select * from elcn_personalrelationshipbase where elcn_person1id = 'ADF14682-B4D0-4600-9A5D-4AEB5F98E418';
+
+select 1 x  
+where 
+NOT EXISTS( 
+-- check todd
+					--SELECT -- excl non-prim spouse
+					--	1 X
+					--FROM
+					--	elcn_personalrelationshipbase 
+					--WHERE(
+					--	elcn_person1id = '59A3438D-F6CB-4B21-B502-00162DE2CA86' --contactbase.contactid
+					--	OR elcn_person2id = '59A3438D-F6CB-4B21-B502-00162DE2CA86' --contactbase.contactid
+					--	) AND elcn_PrimarySpouseId = '59A3438D-F6CB-4B21-B502-00162DE2CA86' --contactbase.contactid
+					--	AND elcn_RelationshipType1ID IN ( '42295D4F-A6EE-E411-942F-005056804B43' , /*Spouse*/
+					--									'4F665855-A3B8-E911-80D8-0A253F89019C', /*Spouse / Partner*/
+					--									'62295D4F-A6EE-E411-942F-005056804B43', /*Domestic Partner*/
+					--									'43665855-A3B8-E911-80D8-0A253F89019C')	/*Life Partner*/
+--check paula
+					SELECT -- excl non-prim spouse
+						1 X
+					FROM
+						elcn_personalrelationshipbase 
+					WHERE(
+						elcn_person1id = 'ADF14682-B4D0-4600-9A5D-4AEB5F98E418'--contactbase.contactid
+						OR elcn_person2id = 'ADF14682-B4D0-4600-9A5D-4AEB5F98E418' --contactbase.contactid
+						) AND elcn_PrimarySpouseId = 'ADF14682-B4D0-4600-9A5D-4AEB5F98E418' --contactbase.contactid
+						AND elcn_RelationshipType1ID IN ( '42295D4F-A6EE-E411-942F-005056804B43' , /*Spouse*/
+														'4F665855-A3B8-E911-80D8-0A253F89019C', /*Spouse / Partner*/
+														'62295D4F-A6EE-E411-942F-005056804B43', /*Domestic Partner*/
+														'43665855-A3B8-E911-80D8-0A253F89019C')	/*Life Partner*/
+)

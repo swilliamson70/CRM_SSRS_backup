@@ -28,6 +28,94 @@
 	;
 
 SELECT
+	cb.contactid
+	, CASE
+		WHEN cb.elcn_dateofdeath IS NULL THEN 'N' -- not dead
+		ELSE 'Y'
+	END DECEASED_IND
+	, cb.elcn_dateofbirth DATE_OF_BIRTH
+	, cb.elcn_PrimaryID pidm
+	, cb.datatel_EnterpriseSystemId ID
+	, cb.fullname as Primary_Name -- NAME
+	, pfn.elcn_firstname PREF_FIRST_NAME
+	, cb.lastname as Last_Name
+	, maiden.elcn_lastname MAIDEN_NAME
+
+--	contactbase.*,
+--	elcn_anonymitytypeBase.elcn_type anonymityType
+FROM(
+	SELECT 
+		ContactBase.*
+	FROM
+		contactbase
+	WHERE
+		fullname not like '%DO%NOT%USE'
+		AND (@p_include_deceased = 'Y' 
+			OR elcn_dateofdeath is null)
+	) CB
+	LEFT JOIN(
+		SELECT TOP 1
+			pnb.elcn_personid
+			, pnb.elcn_firstname
+		FROM 
+			elcn_personnameBase pnb
+		WHERE
+			pnb.elcn_nametype = 'EBC22907-A5CB-4270-8947-C5381D1ECC54' /*Preferred First Name*/
+			AND pnb.elcn_EndDate IS NULL
+			AND pnb.statuscode = 1
+		ORDER BY pnb.ModifiedOn
+	) PFN ON cb.contactid = pfn.elcn_personid
+
+	LEFT JOIN(
+		SELECT TOP 1
+			pnb.elcn_personid 
+			, pnb.elcn_lastname
+		FROM 
+			elcn_personnameBase pnb
+		WHERE 
+			pnb.elcn_nametype = '29C69522-08C1-48E3-A030-F417A0E741C0' /*Maiden Name*/
+			AND pnb.elcn_EndDate IS NULL
+			AND pnb.statuscode = 1
+		ORDER BY pnb.ModifiedOn 
+	) MAIDEN ON cb.contactid = maiden.elcn_personid
+
+
+	LEFT JOIN elcn_anonymitytypebase 
+		ON cb.elcn_AnonymityTypeId = elcn_anonymitytypeBase.elcn_anonymitytypeId
+
+	JOIN elcn_addressassociationBase aab 
+		ON aab.elcn_personId = cb.ContactId 
+		AND aab.elcn_Preferred =1
+	JOIN elcn_addressBase AB
+		ON ab.elcn_addressId = aab.elcn_AddressId
+		AND LEFT(ab.elcn_postalcode,5) IN (@p_zipcodeList)
+	JOIN elcn_stateprovinceBase spb 
+		ON spb.elcn_stateprovinceId = ab.elcn_StateProvinceId 
+--AND spb.elcn_stateprovinceId IN (@p_stateList)
+	JOIN Datatel_countryBase dcb 
+		ON dcb.Datatel_countryId = ab.elcn_country
+	JOIN elcn_addresstypeBase atb 
+		ON atb.elcn_addresstypeId = aab.elcn_AddressTypeId
+
+	LEFT JOIN elcn_personalrelationshipBase SPOUSE_LINK -- includes elcn_jointmailing
+		ON spouse_link.elcn_Person1Id = cb.ContactId
+			AND spouse_link.elcn_RelationshipType1ID IN ( '42295D4F-A6EE-E411-942F-005056804B43' , /*Spouse*/
+														'4F665855-A3B8-E911-80D8-0A253F89019C', /*Spouse / Partner*/
+														'62295D4F-A6EE-E411-942F-005056804B43', /*Domestic Partner*/
+														'43665855-A3B8-E911-80D8-0A253F89019C')	/*Life Partner*/
+			AND (spouse_link.elcn_EndDate is null
+				OR spouse_link.elcn_EndDate > GETDATE())
+			AND spouse_link.statuscode = 1
+	LEFT JOIN elcn_personalrelationshiptype prt 
+		ON spouse_link.elcn_RelationshipType1Id  = prt.elcn_personalrelationshiptypeid 
+	LEFT JOIN ContactBase spouse_p 
+		ON spouse_p.ContactId = spouse_link.elcn_Person2Id
+WHERE
+	fullname not like '%DO%NOT%USE'
+	AND (@p_include_deceased = 'Y' 
+		OR elcn_dateofdeath is null)
+
+SELECT
 	e.elcn_PersonID,
 	e.elcn_educationid,
 	d.elcn_code DEGREE,
