@@ -59,6 +59,7 @@
     <Report Include="EndowmentValuationTable.rdl" />
     <Report Include="Lybunt.rdl" />
     <Report Include="NSUOK_ContribLybunt.rdl" />
+    <Report Include="Standard_Constituent - Copy.rdl" />
     <Report Include="Standard_Constituent.rdl" />
     <Report Include="StringMapBase test.rdl" />
   </ItemGroup>
