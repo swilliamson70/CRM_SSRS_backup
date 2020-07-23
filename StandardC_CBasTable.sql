@@ -87,6 +87,47 @@ FROM(
 ;
 CREATE NONCLUSTERED INDEX INDX_TMP_ID ON #temp_const (contactid);
 
+SELECT 
+	cpb.elcn_personId
+	, CASE cpb.elcn_ContactRestrictionId 
+		WHEN '8872A718-5472-40C4-82C7-DB72FC4CE5A6' THEN /*Exclude*/
+			CASE cpb.elcn_ContactPreferenceTypeId 
+				WHEN '112A7585-A2D9-E911-80D8-0A253F89019C' THEN /*Communications*/
+					CASE cpb.elcn_MethodofContact 
+						WHEN 344220001 THEN 'NPH' /*Phone*/ --	NPH - No Phone
+						WHEN 344220000 THEN 'NMC' /*Letter*/ --	NMC - No Mail Contact
+						WHEN 344220002 THEN 'NEM' /*Email*/ --	NEM - No E-mail
+					END
+				WHEN 'e4e02dc6-3314-e511-9431-005056804b43' THEN  /*Solicitations*/
+					CASE cpb.elcn_MethodofContact 
+						WHEN 344220006 THEN 'NDN' /*All*/ --	NDN - No Donation Solicitations
+					END
+				WHEN '76EA8AA5-2F36-4E8E-BFB2-490677DCF4B4' THEN /*Global Restriction*/
+					CASE cpb.elcn_MethodofContact 
+						WHEN 344220006 THEN 'NOC' /*All*/ --	NOC - No Contact
+					END
+				WHEN 'EE8CE7BD-9CB8-E911-80D8-0A253F89019C' THEN /*Alumni / Club Chapter Mailings*/
+					CASE cpb.elcn_MethodofContact 
+						WHEN 344220000 THEN 'NAM' /*Letter*/ --	NAM - No Alumni Association Mailings
+					END
+				WHEN 'DEE02DC6-3314-E511-9431-005056804B43' THEN /*Acknowledgements*/
+					CASE cpb.elcn_MethodofContact 
+						WHEN 344220000 THEN 'NAK' /*Letter*/	 --	NAK - No Acknowledgement Letters
+					END
+			END 
+		WHEN '3E4E206F-9EB8-E911-80D8-0A253F89019C' THEN /*No Third Party Solicitataions*/
+				'NTP' /*All*/ --	NTP - No Third Party Solicitations
+	END AS EXCLUSION
+INTO
+	#temp_exclusions
+FROM
+	elcn_contactpreferenceBase CPB
+WHERE 
+	(cpb.elcn_RestrictionLiftDate < CURRENT_TIMESTAMP OR cpb.elcn_RestrictionLiftDate IS NULL)
+	AND cpb.elcn_ContactPreferenceStatusId = '378DE114-EB09-E511-943C-0050568068B7' /*Current*/
+;
+CREATE NONCLUSTERED INDEX INDX_TMP_ID ON #temp_exclusions (elcn_personid);
+
 SELECT
 	e.elcn_PersonID,
 	e.elcn_educationid,
@@ -320,96 +361,97 @@ SELECT
 	, dcb.Datatel_name as Nation
 	, atb.elcn_type AS Preferred_Address_Type --ADDRESS_TYPE
 
+
 -- Exclusion categories in ATVEXCL
 --	NPH - No Phone
-	, (CASE WHEN(
-		SELECT COUNT(*) FROM elcn_contactpreferenceBase cpb
-		WHERE cpb.elcn_ContactPreferenceTypeId = '112A7585-A2D9-E911-80D8-0A253F89019C' /*Communications*/
-		AND cpb.elcn_ContactRestrictionId = '8872A718-5472-40C4-82C7-DB72FC4CE5A6' /*Exclude*/
-		AND (cpb.elcn_RestrictionLiftDate < CURRENT_TIMESTAMP OR cpb.elcn_RestrictionLiftDate IS NULL)
-		AND cpb.elcn_ContactPreferenceStatusId = '378DE114-EB09-E511-943C-0050568068B7' /*Current*/
-		AND cpb.elcn_MethodofContact = 344220001 /*Phone*/
-		AND cpb.elcn_personId = const.ContactId
-		) > 0 THEN 'NPH' ELSE NULL END) AS NPH
-
+	--, (CASE WHEN(
+	--	SELECT COUNT(*) FROM elcn_contactpreferenceBase cpb
+	--	WHERE cpb.elcn_ContactPreferenceTypeId = '112A7585-A2D9-E911-80D8-0A253F89019C' /*Communications*/
+	--	AND cpb.elcn_ContactRestrictionId = '8872A718-5472-40C4-82C7-DB72FC4CE5A6' /*Exclude*/
+	--	AND (cpb.elcn_RestrictionLiftDate < CURRENT_TIMESTAMP OR cpb.elcn_RestrictionLiftDate IS NULL)
+	--	AND cpb.elcn_ContactPreferenceStatusId = '378DE114-EB09-E511-943C-0050568068B7' /*Current*/
+	--	AND cpb.elcn_MethodofContact = 344220001 /*Phone*/
+	--	AND cpb.elcn_personId = const.ContactId
+	--	) > 0 THEN 'NPH' ELSE NULL END) AS NPH
+	, exclusions.NPH
 --	NOC - No Contact
-	, (CASE WHEN(
-		SELECT COUNT(*) FROM elcn_contactpreferenceBase cpb
-		WHERE cpb.elcn_ContactPreferenceTypeId = '76EA8AA5-2F36-4E8E-BFB2-490677DCF4B4' /*Global Restriction*/
-		AND cpb.elcn_ContactRestrictionId = '8872A718-5472-40C4-82C7-DB72FC4CE5A6' /*Exclude*/
-		AND (cpb.elcn_RestrictionLiftDate < CURRENT_TIMESTAMP OR cpb.elcn_RestrictionLiftDate IS NULL)
-		AND cpb.elcn_ContactPreferenceStatusId = '378DE114-EB09-E511-943C-0050568068B7' /*Current*/
-		AND cpb.elcn_MethodofContact = 344220006 /*All*/
-		AND cpb.elcn_personId = const.ContactId
-		) > 0 THEN 'NOC' ELSE NULL END) AS NOC
-
+	--, (CASE WHEN(
+	--	SELECT COUNT(*) FROM elcn_contactpreferenceBase cpb
+	--	WHERE cpb.elcn_ContactPreferenceTypeId = '76EA8AA5-2F36-4E8E-BFB2-490677DCF4B4' /*Global Restriction*/
+	--	AND cpb.elcn_ContactRestrictionId = '8872A718-5472-40C4-82C7-DB72FC4CE5A6' /*Exclude*/
+	--	AND (cpb.elcn_RestrictionLiftDate < CURRENT_TIMESTAMP OR cpb.elcn_RestrictionLiftDate IS NULL)
+	--	AND cpb.elcn_ContactPreferenceStatusId = '378DE114-EB09-E511-943C-0050568068B7' /*Current*/
+	--	AND cpb.elcn_MethodofContact = 344220006 /*All*/
+	--	AND cpb.elcn_personId = const.ContactId
+	--	) > 0 THEN 'NOC' ELSE NULL END) AS NOC
+	, exclusions.NOC
 --	NMC - No Mail Contact
-	, (CASE WHEN(
-		SELECT COUNT(*) FROM elcn_contactpreferenceBase cpb
-		WHERE cpb.elcn_ContactPreferenceTypeId = '112A7585-A2D9-E911-80D8-0A253F89019C' /*Communications*/
-		AND cpb.elcn_ContactRestrictionId = '8872A718-5472-40C4-82C7-DB72FC4CE5A6' /*Exclude*/
-		AND (cpb.elcn_RestrictionLiftDate < CURRENT_TIMESTAMP OR cpb.elcn_RestrictionLiftDate IS NULL)
-		AND cpb.elcn_ContactPreferenceStatusId = '378DE114-EB09-E511-943C-0050568068B7' /*Current*/
-		AND cpb.elcn_MethodofContact = 344220000 /*Letter*/
-		AND cpb.elcn_personId = const.ContactId
-		) > 0 THEN 'NMC' ELSE NULL END) AS NMC,
-
+	--, (CASE WHEN(
+	--	SELECT COUNT(*) FROM elcn_contactpreferenceBase cpb
+	--	WHERE cpb.elcn_ContactPreferenceTypeId = '112A7585-A2D9-E911-80D8-0A253F89019C' /*Communications*/
+	--	AND cpb.elcn_ContactRestrictionId = '8872A718-5472-40C4-82C7-DB72FC4CE5A6' /*Exclude*/
+	--	AND (cpb.elcn_RestrictionLiftDate < CURRENT_TIMESTAMP OR cpb.elcn_RestrictionLiftDate IS NULL)
+	--	AND cpb.elcn_ContactPreferenceStatusId = '378DE114-EB09-E511-943C-0050568068B7' /*Current*/
+	--	AND cpb.elcn_MethodofContact = 344220000 /*Letter*/
+	--	AND cpb.elcn_personId = const.ContactId
+	--	) > 0 THEN 'NMC' ELSE NULL END) AS NMC
+	, exclusions.NMC
 --	NEM - No E-mail
-	(CASE WHEN(
-		SELECT COUNT(*) FROM elcn_contactpreferenceBase cpb
-		WHERE cpb.elcn_ContactPreferenceTypeId = '112A7585-A2D9-E911-80D8-0A253F89019C' /*Communications*/
-		AND cpb.elcn_ContactRestrictionId = '8872A718-5472-40C4-82C7-DB72FC4CE5A6' /*Exclude*/
-		AND (cpb.elcn_RestrictionLiftDate < CURRENT_TIMESTAMP OR cpb.elcn_RestrictionLiftDate IS NULL)
-		AND cpb.elcn_ContactPreferenceStatusId = '378DE114-EB09-E511-943C-0050568068B7' /*Current*/
-		AND cpb.elcn_MethodofContact = 344220002 /*Email*/
-		AND cpb.elcn_personId = const.ContactId
-		) > 0 THEN 'NEM' ELSE NULL END) AS NEM
-		
+	--, (CASE WHEN(
+	--	SELECT COUNT(*) FROM elcn_contactpreferenceBase cpb
+	--	WHERE cpb.elcn_ContactPreferenceTypeId = '112A7585-A2D9-E911-80D8-0A253F89019C' /*Communications*/
+	--	AND cpb.elcn_ContactRestrictionId = '8872A718-5472-40C4-82C7-DB72FC4CE5A6' /*Exclude*/
+	--	AND (cpb.elcn_RestrictionLiftDate < CURRENT_TIMESTAMP OR cpb.elcn_RestrictionLiftDate IS NULL)
+	--	AND cpb.elcn_ContactPreferenceStatusId = '378DE114-EB09-E511-943C-0050568068B7' /*Current*/
+	--	AND cpb.elcn_MethodofContact = 344220002 /*Email*/
+	--	AND cpb.elcn_personId = const.ContactId
+	--	) > 0 THEN 'NEM' ELSE NULL END) AS NEM
+	, exclusions.NEM		
 --	NAM - No Alumni Association Mailings
-	, (CASE WHEN(
-		SELECT COUNT(*) FROM elcn_contactpreferenceBase cpb
-		WHERE cpb.elcn_ContactPreferenceTypeId = 'EE8CE7BD-9CB8-E911-80D8-0A253F89019C' /*Alumni / Club Chapter Mailings*/
-		AND cpb.elcn_ContactRestrictionId = '8872A718-5472-40C4-82C7-DB72FC4CE5A6' /*Exclude*/
-		AND (cpb.elcn_RestrictionLiftDate < CURRENT_TIMESTAMP OR cpb.elcn_RestrictionLiftDate IS NULL)
-		AND cpb.elcn_ContactPreferenceStatusId = '378DE114-EB09-E511-943C-0050568068B7' /*Current*/
-		AND cpb.elcn_MethodofContact = 344220000 /*Letter*/
-		AND cpb.elcn_personId = const.ContactId
-		) > 0 THEN 'NAM' ELSE NULL END) AS NAM
-
+	--, (CASE WHEN(
+	--	SELECT COUNT(*) FROM elcn_contactpreferenceBase cpb
+	--	WHERE cpb.elcn_ContactPreferenceTypeId = 'EE8CE7BD-9CB8-E911-80D8-0A253F89019C' /*Alumni / Club Chapter Mailings*/
+	--	AND cpb.elcn_ContactRestrictionId = '8872A718-5472-40C4-82C7-DB72FC4CE5A6' /*Exclude*/
+	--	AND (cpb.elcn_RestrictionLiftDate < CURRENT_TIMESTAMP OR cpb.elcn_RestrictionLiftDate IS NULL)
+	--	AND cpb.elcn_ContactPreferenceStatusId = '378DE114-EB09-E511-943C-0050568068B7' /*Current*/
+	--	AND cpb.elcn_MethodofContact = 344220000 /*Letter*/
+	--	AND cpb.elcn_personId = const.ContactId
+	--	) > 0 THEN 'NAM' ELSE NULL END) AS NAM
+	, exclusions.NAM
 
 --	NDN - No Donation Solicitations
-	, (CASE WHEN(
-		SELECT COUNT(*) FROM elcn_contactpreferenceBase cpb
-		WHERE cpb.elcn_ContactPreferenceTypeId = 'e4e02dc6-3314-e511-9431-005056804b43' /*Solicitations*/
-		AND cpb.elcn_ContactRestrictionId = '8872A718-5472-40C4-82C7-DB72FC4CE5A6' /*Exclude*/
-		AND (cpb.elcn_RestrictionLiftDate < CURRENT_TIMESTAMP OR cpb.elcn_RestrictionLiftDate IS NULL)
-		AND cpb.elcn_ContactPreferenceStatusId = '378DE114-EB09-E511-943C-0050568068B7' /*Current*/
-		AND cpb.elcn_MethodofContact = 344220006 /*All*/
-		AND cpb.elcn_personId = const.ContactId
-		) > 0 THEN 'NDN' ELSE NULL END) AS NDN
-
+	--, (CASE WHEN(
+	--	SELECT COUNT(*) FROM elcn_contactpreferenceBase cpb
+	--	WHERE cpb.elcn_ContactPreferenceTypeId = 'e4e02dc6-3314-e511-9431-005056804b43' /*Solicitations*/
+	--	AND cpb.elcn_ContactRestrictionId = '8872A718-5472-40C4-82C7-DB72FC4CE5A6' /*Exclude*/
+	--	AND (cpb.elcn_RestrictionLiftDate < CURRENT_TIMESTAMP OR cpb.elcn_RestrictionLiftDate IS NULL)
+	--	AND cpb.elcn_ContactPreferenceStatusId = '378DE114-EB09-E511-943C-0050568068B7' /*Current*/
+	--	AND cpb.elcn_MethodofContact = 344220006 /*All*/
+	--	AND cpb.elcn_personId = const.ContactId
+	--	) > 0 THEN 'NDN' ELSE NULL END) AS NDN
+	, exclusions.NDN
 --	NAK - No Acknowledgement Letters
-	, (CASE WHEN(
-		SELECT COUNT(*) FROM elcn_contactpreferenceBase cpb
-		WHERE cpb.elcn_ContactPreferenceTypeId = 'DEE02DC6-3314-E511-9431-005056804B43' /*Acknowledgements*/
-		AND cpb.elcn_ContactRestrictionId = '8872A718-5472-40C4-82C7-DB72FC4CE5A6' /*Exclude*/
-		AND (cpb.elcn_RestrictionLiftDate < CURRENT_TIMESTAMP OR cpb.elcn_RestrictionLiftDate IS NULL)
-		AND cpb.elcn_ContactPreferenceStatusId = '378DE114-EB09-E511-943C-0050568068B7' /*Current*/
-		AND cpb.elcn_MethodofContact = 344220000 /*Letter*/
-		AND cpb.elcn_personId = const.ContactId
-		) > 0 THEN 'NAK' ELSE NULL END) AS NAK
-
+	--, (CASE WHEN(
+	--	SELECT COUNT(*) FROM elcn_contactpreferenceBase cpb
+	--	WHERE cpb.elcn_ContactPreferenceTypeId = 'DEE02DC6-3314-E511-9431-005056804B43' /*Acknowledgements*/
+	--	AND cpb.elcn_ContactRestrictionId = '8872A718-5472-40C4-82C7-DB72FC4CE5A6' /*Exclude*/
+	--	AND (cpb.elcn_RestrictionLiftDate < CURRENT_TIMESTAMP OR cpb.elcn_RestrictionLiftDate IS NULL)
+	--	AND cpb.elcn_ContactPreferenceStatusId = '378DE114-EB09-E511-943C-0050568068B7' /*Current*/
+	--	AND cpb.elcn_MethodofContact = 344220000 /*Letter*/
+	--	AND cpb.elcn_personId = const.ContactId
+	--	) > 0 THEN 'NAK' ELSE NULL END) AS NAK
+	, exclusions.NAK
 --	NTP - No Third Party Solicitations
-	, (CASE WHEN(
-		SELECT COUNT(*) FROM elcn_contactpreferenceBase cpb
-		WHERE cpb.elcn_ContactPreferenceTypeId = 'e4e02dc6-3314-e511-9431-005056804b43' /*Solicitations*/
-		AND cpb.elcn_ContactRestrictionId = '8872A718-5472-40C4-82C7-DB72FC4CE5A6' /*Exclude*/
-		AND (cpb.elcn_RestrictionLiftDate < CURRENT_TIMESTAMP OR cpb.elcn_RestrictionLiftDate IS NULL)
-		AND cpb.elcn_ContactPreferenceStatusId = '378DE114-EB09-E511-943C-0050568068B7' /*Current*/
-		AND cpb.elcn_MethodofContact = 344220006 /*All*/
-		AND cpb.elcn_personId = const.ContactId
-		) > 0 THEN 'NTP' ELSE NULL END) AS NTP
-
+	--, (CASE WHEN(
+	--	SELECT COUNT(*) FROM elcn_contactpreferenceBase cpb
+	--	WHERE cpb.elcn_ContactPreferenceTypeId = 'e4e02dc6-3314-e511-9431-005056804b43' /*Solicitations*/
+	--	AND cpb.elcn_ContactRestrictionId = '8872A718-5472-40C4-82C7-DB72FC4CE5A6' /*Exclude*/
+	--	AND (cpb.elcn_RestrictionLiftDate < CURRENT_TIMESTAMP OR cpb.elcn_RestrictionLiftDate IS NULL)
+	--	AND cpb.elcn_ContactPreferenceStatusId = '378DE114-EB09-E511-943C-0050568068B7' /*Current*/
+	--	AND cpb.elcn_MethodofContact = 344220006 /*All*/
+	--	AND cpb.elcn_personId = const.ContactId
+	--	) > 0 THEN 'NTP' ELSE NULL END) AS NTP
+	, exclusions.NTP
 	, const.anonymityType Anonymity_Type
 
 --->> RATINGS
@@ -747,6 +789,21 @@ FROM
 	LEFT JOIN ContactBase spouse_p 
 		ON spouse_p.ContactId = spouse_link.elcn_Person2Id
 
+	LEFT JOIN(
+		SELECT *
+		FROM(
+			SELECT 
+				elcn_personid
+				, exclusion
+				--, rn = DENSE_RANK() OVER (PARTITION BY elcn_personid, exclusion ORDER BY exclusion)
+			FROM
+				#temp_exclusions) T
+		PIVOT(
+			MAX(exclusion)
+			FOR exclusion IN ([NPH],[NMC],[NEM],[NDN],[NTP],[NOC],[NAM],[NAK]) 
+		) PVT
+	) EXCLUSIONS ON const.contactid = exclusions.elcn_PersonId
+
 	LEFT JOIN elcn_constituentaffiliationBase cab 
 		ON cab.elcn_constituentaffiliationId = const.elcn_primaryconstituentaffiliationid
 
@@ -999,5 +1056,5 @@ WHERE
 			AND const.contactid = spouse_link.elcn_primaryspouseid) --and this person is primary
 	)
 
-and const.Primary_Name like '%Mutzig%'
+--and const.Primary_Name like '%Mutzig%'
 ;

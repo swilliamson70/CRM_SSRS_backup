@@ -348,7 +348,9 @@ select * from elcn_contactpreferencebase cpb
 where statuscode = 1
 --and cpb.elcn_ContactRestrictionId <> '8872A718-5472-40C4-82C7-DB72FC4CE5A6' /*Exclude*/
 AND cpb.elcn_ContactPreferenceStatusId = '378DE114-EB09-E511-943C-0050568068B7' /*Current*/
+select * from StringMapBase where attributename = 'elcn_methodofcontact';
 
+select elcn_contactrestrictionid,elcn_name  from elcn_contactrestrictionBase;
 ;
 /*
 	(CASE WHEN(
