@@ -113,6 +113,10 @@ select * from filteredstringmap where FilteredViewName = 'Filteredelcn_constitue
 				and attributevalue = 344220000
 		where elcn_constituenttypeid = '23AC35BB-A383-E911-80D7-0A253F89019C' -- value = 'Alum'
 
+select 1 x where exists(
+select fullname from contactbase where fullname like '%Dave J Scott%')
+;
+
 
 select * from filteredstringmap sm
 where sm.FilteredViewName = 'Filteredelcn_constituenttype'
