@@ -735,6 +735,7 @@ BA888E82-9AA2-40EA-93B5-087FA9600AF1	1963 Football Team
 A3A35777-9E7E-4E91-8D4E-2BBEBAF84A86	1994 Nat'l Champ Football Team
 E7DB033D-40AF-469F-9720-E4C8E0878667	1994 PLC Freshman Class
 561CAE7F-6787-460C-8E98-19B746BAB64B	9/11 Day of Service*/
+select distinct elcn_name from elcn_involvementactivityBase where statuscode = 1 order by 1;
 
 select  * from elcn_contributiondonor
 where datepart(YYYY,elcn_ContributionDate) =  @donationYear ;
@@ -1047,3 +1048,20 @@ NOT EXISTS(
 														'62295D4F-A6EE-E411-942F-005056804B43', /*Domestic Partner*/
 														'43665855-A3B8-E911-80D8-0A253F89019C')	/*Life Partner*/
 )
+
+;
+select * from elcn_stateprovinceBase
+where elcn_stateprovinceid = 'DC23CFDA-A383-E911-80D7-0A253F89019C';
+
+
+WITH    yearlist
+      AS ( SELECT   1909 AS year
+           UNION ALL
+           SELECT   yl.year + 1 AS year
+           FROM     yearlist yl
+           WHERE    yl.year + 1 <= YEAR(GETDATE())
+         )
+SELECT  year
+FROM    yearlist
+ORDER BY year DESC
+OPTION (MAXRECURSION 200);
