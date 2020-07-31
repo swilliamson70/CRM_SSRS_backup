@@ -15,20 +15,11 @@
       <Query>
         <DataSourceName>MSCRM_DataSource</DataSourceName>
         <QueryParameters>
-          <QueryParameter Name="@p_primary_spouse_only">
-            <Value>=Parameters!p_primary_spouse_only.Value</Value>
-          </QueryParameter>
           <QueryParameter Name="@p_include_deceased">
             <Value>=Parameters!p_include_deceased.Value</Value>
           </QueryParameter>
           <QueryParameter Name="@p_stateList">
             <Value>=Parameters!p_stateList.Value</Value>
-          </QueryParameter>
-          <QueryParameter Name="@p_zipcodeList">
-            <Value>=Parameters!p_zipcodeList.Value</Value>
-          </QueryParameter>
-          <QueryParameter Name="@p_cityname">
-            <Value>=Parameters!p_cityname.Value</Value>
           </QueryParameter>
           <QueryParameter Name="@p_StartDate">
             <Value>=Parameters!p_StartDate.Value</Value>
@@ -37,7 +28,8 @@
             <Value>=Parameters!p_EndDate.Value</Value>
           </QueryParameter>
         </QueryParameters>
-        <CommandText>WITH W_CONTACTID_LIST AS(
+        <CommandText>/*
+WITH W_CONTACTID_LIST AS(
 	SELECT 
 		contactid
 	FROM
@@ -65,7 +57,7 @@
 			OR contactbase.elcn_dateofdeath IS NULL
 		)
 )
-
+*/
 SELECT
 	cb.contactid
 	, CASE
@@ -96,7 +88,7 @@ FROM(
 		AND (@p_include_deceased = 'Y' 
 			OR elcn_dateofdeath is null)
 		AND statuscode = 1
-		AND contactbase.contactid in (SELECT contactid from w_contactid_list)
+		--AND contactbase.contactid in (SELECT contactid from w_contactid_list)
 	) CB
 	LEFT JOIN(
 		SELECT TOP 1
@@ -168,8 +160,7 @@ FROM
 		ON dcb.Datatel_countryId = ab.elcn_country		
 WHERE
 	ab.elcn_StateProvinceId in (@p_stateList)
-	AND LEFT(ab.elcn_postalcode,5) IN (@p_zipcodeList)
-	AND ab.elcn_city LIKE COALESCE(@p_cityname+'%','%') 
+
 ;
 
 CREATE NONCLUSTERED INDEX INDX_TMP_ADDRID ON #temp_addresses (elcn_addressId);
@@ -1115,8 +1106,7 @@ WHERE
 
 --and const.Primary_Name like '%Mutzig%'
 */
-;
-</CommandText>
+;</CommandText>
         <Timeout>300</Timeout>
         <rd:UseGenericDesigner>true</rd:UseGenericDesigner>
       </Query>
@@ -8916,6 +8906,7 @@ OPTION (MAXRECURSION 200);</CommandText>
     </ReportParameter>
     <ReportParameter Name="p_zipcodeList">
       <DataType>String</DataType>
+      <Nullable>true</Nullable>
       <DefaultValue>
         <DataSetReference>
           <DataSetName>ds_zipcodes</DataSetName>
@@ -8923,13 +8914,13 @@ OPTION (MAXRECURSION 200);</CommandText>
         </DataSetReference>
       </DefaultValue>
       <Prompt>Select Zip Codes*</Prompt>
+      <Hidden>true</Hidden>
       <ValidValues>
         <DataSetReference>
           <DataSetName>ds_zipcodes</DataSetName>
           <ValueField>ZIP_CODE</ValueField>
         </DataSetReference>
       </ValidValues>
-      <MultiValue>true</MultiValue>
     </ReportParameter>
     <ReportParameter Name="p_include_deceased">
       <DataType>String</DataType>
@@ -8960,6 +8951,7 @@ OPTION (MAXRECURSION 200);</CommandText>
         </Values>
       </DefaultValue>
       <Prompt>Primary Spouse/Unmarried Only?</Prompt>
+      <Hidden>true</Hidden>
       <ValidValues>
         <ParameterValues>
           <ParameterValue>
@@ -8982,6 +8974,7 @@ OPTION (MAXRECURSION 200);</CommandText>
         </Values>
       </DefaultValue>
       <Prompt>Enter City (or blank for all cities)</Prompt>
+      <Hidden>true</Hidden>
     </ReportParameter>
     <ReportParameter Name="p_activities">
       <DataType>String</DataType>
@@ -9009,6 +9002,7 @@ OPTION (MAXRECURSION 200);</CommandText>
         </DataSetReference>
       </DefaultValue>
       <Prompt>Activity Years:</Prompt>
+      <Hidden>true</Hidden>
       <ValidValues>
         <DataSetReference>
           <DataSetName>ds_years</DataSetName>
@@ -9026,6 +9020,7 @@ OPTION (MAXRECURSION 200);</CommandText>
         </DataSetReference>
       </DefaultValue>
       <Prompt>Academic Year:</Prompt>
+      <Hidden>true</Hidden>
       <ValidValues>
         <DataSetReference>
           <DataSetName>ds_years</DataSetName>

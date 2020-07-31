@@ -26,7 +26,7 @@
 	, @p_majors varchar(99) -- 0000 - undeclared, 1100 - business admin
 	, @p_degrees varchar(99) -- a - associates, aa - associates in arts
 	;
-
+/*
 WITH W_CONTACTID_LIST AS(
 	SELECT 
 		contactid
@@ -55,7 +55,7 @@ WITH W_CONTACTID_LIST AS(
 			OR contactbase.elcn_dateofdeath IS NULL
 		)
 )
-
+*/
 SELECT
 	cb.contactid
 	, CASE
@@ -86,7 +86,7 @@ FROM(
 		AND (@p_include_deceased = 'Y' 
 			OR elcn_dateofdeath is null)
 		AND statuscode = 1
-		AND contactbase.contactid in (SELECT contactid from w_contactid_list)
+		--AND contactbase.contactid in (SELECT contactid from w_contactid_list)
 	) CB
 	LEFT JOIN(
 		SELECT TOP 1
@@ -158,8 +158,8 @@ FROM
 		ON dcb.Datatel_countryId = ab.elcn_country		
 WHERE
 	ab.elcn_StateProvinceId in (@p_stateList)
-	AND LEFT(ab.elcn_postalcode,5) IN (@p_zipcodeList)
-	AND ab.elcn_city LIKE COALESCE(@p_cityname+'%','%') 
+	--AND LEFT(ab.elcn_postalcode,5) IN (@p_zipcodeList)
+	--AND ab.elcn_city LIKE COALESCE(@p_cityname+'%','%') 
 ;
 
 CREATE NONCLUSTERED INDEX INDX_TMP_ADDRID ON #temp_addresses (elcn_addressId);
