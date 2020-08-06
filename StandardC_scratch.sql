@@ -1065,3 +1065,36 @@ SELECT  year
 FROM    yearlist
 ORDER BY year DESC
 OPTION (MAXRECURSION 200);
+
+
+select elcn_name from(
+
+select 
+  'No activities'  elcn_name
+   , 1 ordergroup
+UNION
+select distinct 
+   elcn_name 
+   , 2 ordergroup
+from 
+   elcn_involvementactivityBase 
+where 
+   statuscode = 1 
+) t
+order by ordergroup, elcn_name
+
+;
+select * from (
+select 
+  'No activities'  elcn_name
+   , 1 ordergroup
+UNION
+select distinct 
+   elcn_name 
+   , 2 ordergroup
+from 
+   elcn_involvementactivityBase 
+where 
+   statuscode = 1 
+) t
+order by case when elcn_name = 'No activities' then 1 else 2 end, elcn_name

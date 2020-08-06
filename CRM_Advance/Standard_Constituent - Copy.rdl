@@ -27,8 +27,18 @@
           <QueryParameter Name="@p_EndDate">
             <Value>=Parameters!p_EndDate.Value</Value>
           </QueryParameter>
+          <QueryParameter Name="@p_activities">
+            <Value>=Parameters!p_activities.Value</Value>
+          </QueryParameter>
+          <QueryParameter Name="@p_ignore_activities">
+            <Value>=Parameters!p_ignore_activities.Value</Value>
+          </QueryParameter>
+          <QueryParameter Name="@p_academic_years">
+            <Value>=Parameters!p_academic_years.Value</Value>
+          </QueryParameter>
         </QueryParameters>
-        <CommandText>/*
+        <CommandText>
+/*
 WITH W_CONTACTID_LIST AS(
 	SELECT 
 		contactid
@@ -1075,24 +1085,24 @@ FROM
 		GROUP BY
 			elcn_personid 
 	)ACTIVITIES ON const.contactid = activities.elcn_personid
-/*		
+		
 WHERE	
-	(
-		@p_activities = 'A'
-		OR EXISTS(
+	
+		EXISTS(
 			SELECT
 				ib.elcn_name 
 			FROM
 				elcn_involvementBase IB
 			WHERE
 				ib.elcn_personid = const.contactid
-				AND ib.elcn_name in (@p_activities)
-				AND (COALESCE(elcn_ClassYear,elcn_EndYear) IN (@p_activity_years)
-					OR COALESCE(elcn_ClassYear,elcn_EndYear) IS NULL 
-					)
+				AND ib.elcn_name in (@p_activities)						
+			UNION
+			SELECT
+				1 x
+			WHERE 
+				@p_ignore_activities = 'Y'	
 			)
-
-	) AND(
+	AND(
 		EXISTS(
 			SELECT 
 				edu.Degree_Year
@@ -1103,9 +1113,8 @@ WHERE
 				AND edu.Degree_Year in (@p_academic_years)
 		)
 	)
-
 --and const.Primary_Name like '%Mutzig%'
-*/
+
 ;</CommandText>
         <Timeout>300</Timeout>
         <rd:UseGenericDesigner>true</rd:UseGenericDesigner>
@@ -1115,11 +1124,11 @@ WHERE
           <DataField>ContactId</DataField>
           <rd:TypeName>System.Guid</rd:TypeName>
         </Field>
-        <Field Name="DECEASED_IND">
+        <Field Name="deceased_ind">
           <DataField>deceased_ind</DataField>
           <rd:TypeName>System.String</rd:TypeName>
         </Field>
-        <Field Name="DATE_OF_BIRTH">
+        <Field Name="date_of_birth">
           <DataField>date_of_birth</DataField>
           <rd:TypeName>System.String</rd:TypeName>
         </Field>
@@ -1127,7 +1136,7 @@ WHERE
           <DataField>pidm</DataField>
           <rd:TypeName>System.String</rd:TypeName>
         </Field>
-        <Field Name="ID">
+        <Field Name="id">
           <DataField>id</DataField>
           <rd:TypeName>System.String</rd:TypeName>
         </Field>
@@ -1549,314 +1558,16 @@ from
         </Field>
       </Fields>
     </DataSet>
-    <DataSet Name="ds_zipcodes">
-      <Query>
-        <DataSourceName>MSCRM_DataSource</DataSourceName>
-        <CommandText>select distinct
-     left(elcn_postalcode,5) ZIP_CODE
-from 
-    elcn_addressbase
-order by 1</CommandText>
-      </Query>
-      <Fields>
-        <Field Name="ZIP_CODE">
-          <DataField>ZIP_CODE</DataField>
-          <rd:TypeName>System.String</rd:TypeName>
-        </Field>
-      </Fields>
-    </DataSet>
-    <DataSet Name="ds_complex">
-      <Query>
-        <DataSourceName>MSCRM_DataSource</DataSourceName>
-        <QueryParameters>
-          <QueryParameter Name="@p_include_deceased">
-            <Value>=Parameters!p_include_deceased.Value</Value>
-          </QueryParameter>
-        </QueryParameters>
-        <CommandText>SELECT
-	cb.contactid
-	, CASE
-		WHEN cb.elcn_dateofdeath IS NULL THEN 'N'
-		ELSE 'Y'
-	END DECEASED_IND
-	, cb.elcn_dateofbirth DATE_OF_BIRTH
-	, cb.elcn_PrimaryID pidm
-	, cb.datatel_EnterpriseSystemId ID
-	, cb.fullname Primary_Name
-	, pfn.elcn_firstname PREF_FIRST_NAME
-	, cb.lastname Last_Name
-	, maiden.elcn_lastname MAIDEN_NAME
-	, elcn_anonymitytypeBase.elcn_type anonymityType
-	, cb.elcn_LargestContributionAmount Largest_Contribution_Amount
-	, cb.elcn_LastContributionDate
-	, cb.elcn_totalGiving Lifetime_Giving
-	, cb.elcn_primaryconstituentaffiliationid
-INTO
-	#temp_const
-FROM(
-	SELECT 
-		ContactBase.*
-	FROM
-		contactbase
-	WHERE
-		fullname not like '%DO%NOT%USE'
-		AND (@p_include_deceased = 'Y' 
-			OR elcn_dateofdeath is null)
-		AND statuscode = 1
-	) CB
-	LEFT JOIN(
-		SELECT TOP 1
-			pnb.elcn_personid
-			, pnb.elcn_firstname
-		FROM 
-			elcn_personnameBase pnb
-		WHERE
-			pnb.elcn_nametype = 'EBC22907-A5CB-4270-8947-C5381D1ECC54' /*Preferred First Name*/
-			AND pnb.elcn_EndDate IS NULL
-			AND pnb.statuscode = 1
-		ORDER BY pnb.ModifiedOn
-	) PFN ON cb.contactid = pfn.elcn_personid
-	LEFT JOIN(
-		SELECT TOP 1
-			pnb.elcn_personid 
-			, pnb.elcn_lastname
-		FROM 
-			elcn_personnameBase pnb
-		WHERE 
-			pnb.elcn_nametype = '29C69522-08C1-48E3-A030-F417A0E741C0' /*Maiden Name*/
-			AND pnb.elcn_EndDate IS NULL
-			AND pnb.statuscode = 1
-		ORDER BY pnb.ModifiedOn 
-	) MAIDEN ON cb.contactid = maiden.elcn_personid
-	LEFT JOIN elcn_anonymitytypebase 
-		ON cb.elcn_AnonymityTypeId = elcn_anonymitytypeBase.elcn_anonymitytypeId
-;
-CREATE NONCLUSTERED INDEX INDX_TMP_ID ON #temp_const (contactid);
-
-SELECT
-	e.elcn_PersonID,
-	e.elcn_educationid,
-	d.elcn_code DEGREE,
-	d.elcn_Name AS Degree_Name,
-	e.elcn_DegreeYear Degree_Year,
-	(
-		Select TOP 1 mb.elcn_name FROM elcn_education_elcn_majorBase emb
-		INNER JOIN elcn_majorBase mb ON mb.elcn_majorId = emb.elcn_majorid
-		Where emb.elcn_educationid = e.elcn_educationId
-	) AS Major,
-	ROW_NUMBER() OVER(PARTITION BY e.elcn_personId 
-					ORDER BY e.elcn_DegreeYear DESC) AS RANK_NO
-INTO 
-	#temp_education
-FROM 
-	dbo.elcn_educationBase e
-	JOIN elcn_degreeBase d on d.elcn_degreeId = e.elcn_DegreeId
-WHERE e.statuscode = 1
-;
-CREATE NONCLUSTERED INDEX INDX_TMP_EDUCATION_RANKS ON #temp_education (elcn_personId);
-
-SELECT 
-	elcn_personid,
-	CASE elcn_typeid 
-		WHEN '1172C46B-462D-E411-9415-005056804B43' THEN 'CIFE'
-		WHEN '0F72C46B-462D-E411-9415-005056804B43' THEN 'SIFE'
-		WHEN '1B72C46B-462D-E411-9415-005056804B43' THEN 'SIFL'
-		WHEN '89799F16-C4E8-4269-B409-5756998F193F' THEN 'CIFL'
-		ELSE cast(elcn_typeid as varchar(40))
-	END AS SALU_CODE,
-	elcn_formattedname,
-	elcn_locked, 
-	modifiedon 
-INTO
-	#temp_aprsalu
-FROM
-	elcn_formattednamebase
-WHERE
-	elcn_typeid in ('1172C46B-462D-E411-9415-005056804B43', -- Joint Mailing Name (CIFE)
-			    		'0F72C46B-462D-E411-9415-005056804B43', --Mailing Name (SIFE)
-	     				'1B72C46B-462D-E411-9415-005056804B43', --Casual Salutation (SIFL)
-		    			'89799F16-C4E8-4269-B409-5756998F193F') --Casual Joint Saluation (CIFL)
-	AND (elcn_enddate &gt;= SYSDATETIME() 
-		OR elcn_enddate IS NULL)
-;
-CREATE NONCLUSTERED INDEX INDX_TMP_ID_SALU ON #temp_aprsalu (elcn_personId,salu_code);
-
-SELECT DISTINCT  
-	elcn_person personid,
-	datepart(YYYY,elcn_ContributionDate)givingyear,
-	datepart(YYYY,elcn_ContributionDate) -1 prevyear
-INTO
-	#temp_dontations
-FROM
-	elcn_contributiondonorBase 
-;
-
-SELECT elcn_personid, elcn_ratingtypeid, [Value], [Level], [Score]
-INTO #temp_ratings
-FROM(
-	SELECT
-		elcn_ratingBase.elcn_ratingDescription ,
-		elcn_ratingBase.elcn_personid,
-		elcn_ratingBase.elcn_ratingtypeid,
-		elcn_ratingBase.elcn_ratingvalue
-	FROM
-		elcn_ratingBase
-) T PIVOT
-(	
-	MAX(elcn_ratingvalue)
-	FOR elcn_ratingDescription  IN
-	([Value], [Level], [Score]) 
-) PVT
-;
-CREATE NONCLUSTERED INDEX INDX_TMP_ID_RATINGTYPE ON #temp_ratings (elcn_personid, elcn_ratingtypeid);
-
-SELECT
-	elcn_PrimaryMemberPersonId, 
-	elcn_membershipprogramlevelbase.elcn_name ,
-	elcn_statusbase.elcn_name status,
-	elcn_membershipBase.elcn_MembershipNumber , --7701
-	CONVERT(DATE, elcn_membershipBase.elcn_ExpireDate) elcn_ExpireDate  -- null
-INTO #temp_membership
-FROM
-	elcn_membershipBase
-	JOIN elcn_membershipprogramlevelbase
-		ON elcn_membershipBase.elcn_MembershipLevelId = elcn_membershipprogramlevelid
-	JOIN elcn_statusbase
-		ON elcn_membershipBase.elcn_MembershipStatusId  = elcn_statusid
-;
-CREATE NONCLUSTERED INDEX INDX_TMP_ID_MEMBERSHIP ON #temp_membership (elcn_primarymemberpersonid);
-
-SELECT  
-	elcn_personid,
-	Preferred,
-	Business,
-	Personal,
-	Other,
-	Yellow,
-	Alumni,
-	NSU
-INTO 
-	#temp_email_slot
-FROM(
-	SELECT
-		case elcn_typeid
-			WHEN 'CC0141A1-A383-E911-80D7-0A253F89019C' THEN 'Business'
-			WHEN 'CD0141A1-A383-E911-80D7-0A253F89019C' THEN 'Personal'
-			WHEN '31292157-E075-4E85-9204-1CCEDEC9DBF9'	THEN 'Other'
-			WHEN 'F523FC9B-5370-46F3-9242-263411E73043' THEN 'Yellow ' -- Waiting Authorization
-			WHEN 'A4B7A0CC-0DFF-4069-8337-6571B94CA5BD'	THEN 'Alumni'
-			WHEN '26E175F1-4286-4B7E-9CE9-F2E383D58EFD'	THEN 'NSU'
-			ELSE 'Unknown'
-		END AS emailtype,
-		elcn_personid,
-		elcn_email
-	FROM
-		elcn_emailaddressbase
-	WHERE
-		statuscode = 1
-		AND	elcn_EmailAddressStatusId = '378DE114-EB09-E511-943C-0050568068B7' -- current
-										-- 050FE7CB-5508-E511-943C-0050568068B7 -- past
-	UNION ALL 
-	SELECT
-		'Preferred',
-		elcn_personid,
-		elcn_email
-	FROM
-		elcn_emailaddressbase
-	WHERE
-		statuscode =1 
-		AND	elcn_EmailAddressStatusId = '378DE114-EB09-E511-943C-0050568068B7' -- current
-		AND elcn_preferred = 1
-
-)T PIVOT 
-(	MAX(elcn_email)
-	FOR emailtype 
-	IN ([Preferred], [Business], [Personal], [Other], [Yellow], [Alumni], [NSU])
-)PVT;
-
-CREATE NONCLUSTERED INDEX INDX_TMP_ID ON #temp_email_slot (elcn_personid);
-
---&gt;&gt; Phone
-SELECT
-	elcn_personid, --guid 
-	elcn_phonenumber, --phone number
-	elcn_type,
-	elcn_preferred -- 0/1
-INTO #temp_phone
-FROM(
-	SELECT 
-		elcn_personid
-		, elcn_phonenumber
-		, elcn_phonetypeBase.elcn_type
-		, elcn_preferred
-		, ROW_NUMBER() OVER (PARTITION BY elcn_personid, elcn_phonetypebase.elcn_type
-								ORDER BY elcn_preferred DESC) RN
-	FROM
-		elcn_phonebase
-		JOIN elcn_phonetypebase
-			ON elcn_phonebase.elcn_phonetype = elcn_phonetypebase.elcn_phonetypeid  
-			AND elcn_phonebase.elcn_phonestatusid = '378DE114-EB09-E511-943C-0050568068B7' -- Current
-			AND elcn_phonebase.statuscode = 1
-	) PHONES 
-WHERE
-	RN = 1 
-CREATE NONCLUSTERED INDEX INDX_TMP_ID ON #temp_phone (elcn_personid);
-
-with w_get_consec_years AS ( 
---anchor 
-	select personid,
-		givingyear,
-		prevyear,
-		1 consecyears
-	from #temp_dontations
---recusive memeber
-	union all
-	select d.personid,
-	d.givingyear,
-	d.prevyear,
-	cte.consecyears +1 consecyears
-	from #temp_dontations d 
-		inner join w_get_consec_years cte
-			on cte.personid = d.personid
-			and d.givingyear -1 = cte.givingyear
---termination
-),
-	w_get_longest_consec_years AS ( 
---anchor 
-	select personid,
-		givingyear,
-		prevyear,
-		1 consecyears
-	from #temp_dontations
---recusive memeber
-	union all
-	select d.personid,
-	d.givingyear,
-	d.prevyear,
-	cte.consecyears +1 consecyears
-	from #temp_dontations d 
-		inner join w_get_consec_years cte
-			on cte.personid = d.personid
-			and d.givingyear -1 = cte.givingyear
---termination
-)
-
-SELECT
-	const.ContactId
-from #temp_const CONST
-</CommandText>
-      </Query>
-      <Fields>
-        <Field Name="ContactId">
-          <DataField>ContactId</DataField>
-          <rd:TypeName>System.Guid</rd:TypeName>
-        </Field>
-      </Fields>
-    </DataSet>
     <DataSet Name="ds_activities">
       <Query>
         <DataSourceName>MSCRM_DataSource</DataSourceName>
-        <CommandText>select distinct elcn_name from elcn_involvementactivityBase where statuscode = 1 order by 1</CommandText>
+        <CommandText>select distinct 
+   elcn_name 
+from 
+   elcn_involvementactivityBase 
+where 
+   statuscode = 1 
+order by 1</CommandText>
       </Query>
       <Fields>
         <Field Name="elcn_name">
@@ -5473,21 +5184,21 @@ OPTION (MAXRECURSION 200);</CommandText>
                   <TablixCells>
                     <TablixCell>
                       <CellContents>
-                        <Textbox Name="DECEASED_IND">
+                        <Textbox Name="deceased_ind">
                           <CanGrow>true</CanGrow>
                           <KeepTogether>true</KeepTogether>
                           <Paragraphs>
                             <Paragraph>
                               <TextRuns>
                                 <TextRun>
-                                  <Value>=Fields!DECEASED_IND.Value</Value>
+                                  <Value>=Fields!deceased_ind.Value</Value>
                                   <Style />
                                 </TextRun>
                               </TextRuns>
                               <Style />
                             </Paragraph>
                           </Paragraphs>
-                          <rd:DefaultName>DECEASED_IND</rd:DefaultName>
+                          <rd:DefaultName>deceased_ind</rd:DefaultName>
                           <Style>
                             <Border>
                               <Color>LightGrey</Color>
@@ -5503,21 +5214,21 @@ OPTION (MAXRECURSION 200);</CommandText>
                     </TablixCell>
                     <TablixCell>
                       <CellContents>
-                        <Textbox Name="DATE_OF_BIRTH">
+                        <Textbox Name="date_of_birth">
                           <CanGrow>true</CanGrow>
                           <KeepTogether>true</KeepTogether>
                           <Paragraphs>
                             <Paragraph>
                               <TextRuns>
                                 <TextRun>
-                                  <Value>=Fields!DATE_OF_BIRTH.Value</Value>
+                                  <Value>=Fields!date_of_birth.Value</Value>
                                   <Style />
                                 </TextRun>
                               </TextRuns>
                               <Style />
                             </Paragraph>
                           </Paragraphs>
-                          <rd:DefaultName>DATE_OF_BIRTH</rd:DefaultName>
+                          <rd:DefaultName>date_of_birth</rd:DefaultName>
                           <Style>
                             <Border>
                               <Color>LightGrey</Color>
@@ -5533,14 +5244,14 @@ OPTION (MAXRECURSION 200);</CommandText>
                     </TablixCell>
                     <TablixCell>
                       <CellContents>
-                        <Textbox Name="ID">
+                        <Textbox Name="id">
                           <CanGrow>true</CanGrow>
                           <KeepTogether>true</KeepTogether>
                           <Paragraphs>
                             <Paragraph>
                               <TextRuns>
                                 <TextRun>
-                                  <Value>=Fields!ID.Value</Value>
+                                  <Value>=Fields!id.Value</Value>
                                   <Style>
                                     <FontFamily>Arial</FontFamily>
                                   </Style>
@@ -5549,7 +5260,7 @@ OPTION (MAXRECURSION 200);</CommandText>
                               <Style />
                             </Paragraph>
                           </Paragraphs>
-                          <rd:DefaultName>ID</rd:DefaultName>
+                          <rd:DefaultName>id</rd:DefaultName>
                           <Style>
                             <Border>
                               <Color>LightGrey</Color>
@@ -8904,24 +8615,6 @@ OPTION (MAXRECURSION 200);</CommandText>
       </ValidValues>
       <MultiValue>true</MultiValue>
     </ReportParameter>
-    <ReportParameter Name="p_zipcodeList">
-      <DataType>String</DataType>
-      <Nullable>true</Nullable>
-      <DefaultValue>
-        <DataSetReference>
-          <DataSetName>ds_zipcodes</DataSetName>
-          <ValueField>ZIP_CODE</ValueField>
-        </DataSetReference>
-      </DefaultValue>
-      <Prompt>Select Zip Codes*</Prompt>
-      <Hidden>true</Hidden>
-      <ValidValues>
-        <DataSetReference>
-          <DataSetName>ds_zipcodes</DataSetName>
-          <ValueField>ZIP_CODE</ValueField>
-        </DataSetReference>
-      </ValidValues>
-    </ReportParameter>
     <ReportParameter Name="p_include_deceased">
       <DataType>String</DataType>
       <DefaultValue>
@@ -8943,38 +8636,26 @@ OPTION (MAXRECURSION 200);</CommandText>
         </ParameterValues>
       </ValidValues>
     </ReportParameter>
-    <ReportParameter Name="p_primary_spouse_only">
+    <ReportParameter Name="p_ignore_activities">
       <DataType>String</DataType>
       <DefaultValue>
         <Values>
           <Value>N</Value>
         </Values>
       </DefaultValue>
-      <Prompt>Primary Spouse/Unmarried Only?</Prompt>
-      <Hidden>true</Hidden>
+      <Prompt>Ignore Activites?</Prompt>
       <ValidValues>
         <ParameterValues>
           <ParameterValue>
             <Value>N</Value>
-            <Label>No</Label>
+            <Label>N</Label>
           </ParameterValue>
           <ParameterValue>
             <Value>Y</Value>
-            <Label>Yes</Label>
+            <Label>Y</Label>
           </ParameterValue>
         </ParameterValues>
       </ValidValues>
-    </ReportParameter>
-    <ReportParameter Name="p_cityname">
-      <DataType>String</DataType>
-      <Nullable>true</Nullable>
-      <DefaultValue>
-        <Values>
-          <Value xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:nil="true" />
-        </Values>
-      </DefaultValue>
-      <Prompt>Enter City (or blank for all cities)</Prompt>
-      <Hidden>true</Hidden>
     </ReportParameter>
     <ReportParameter Name="p_activities">
       <DataType>String</DataType>
@@ -8984,29 +8665,12 @@ OPTION (MAXRECURSION 200);</CommandText>
           <ValueField>elcn_name</ValueField>
         </DataSetReference>
       </DefaultValue>
+      <AllowBlank>true</AllowBlank>
       <Prompt>Select Activities</Prompt>
       <ValidValues>
         <DataSetReference>
           <DataSetName>ds_activities</DataSetName>
           <ValueField>elcn_name</ValueField>
-        </DataSetReference>
-      </ValidValues>
-      <MultiValue>true</MultiValue>
-    </ReportParameter>
-    <ReportParameter Name="p_activity_years">
-      <DataType>String</DataType>
-      <DefaultValue>
-        <DataSetReference>
-          <DataSetName>ds_years</DataSetName>
-          <ValueField>year</ValueField>
-        </DataSetReference>
-      </DefaultValue>
-      <Prompt>Activity Years:</Prompt>
-      <Hidden>true</Hidden>
-      <ValidValues>
-        <DataSetReference>
-          <DataSetName>ds_years</DataSetName>
-          <ValueField>year</ValueField>
         </DataSetReference>
       </ValidValues>
       <MultiValue>true</MultiValue>
@@ -9020,7 +8684,6 @@ OPTION (MAXRECURSION 200);</CommandText>
         </DataSetReference>
       </DefaultValue>
       <Prompt>Academic Year:</Prompt>
-      <Hidden>true</Hidden>
       <ValidValues>
         <DataSetReference>
           <DataSetName>ds_years</DataSetName>
@@ -9051,37 +8714,22 @@ OPTION (MAXRECURSION 200);</CommandText>
           <ParameterName>p_stateList</ParameterName>
         </CellDefinition>
         <CellDefinition>
-          <ColumnIndex>3</ColumnIndex>
-          <RowIndex>0</RowIndex>
-          <ParameterName>p_zipcodeList</ParameterName>
-        </CellDefinition>
-        <CellDefinition>
           <ColumnIndex>0</ColumnIndex>
           <RowIndex>1</RowIndex>
           <ParameterName>p_include_deceased</ParameterName>
         </CellDefinition>
         <CellDefinition>
-          <ColumnIndex>1</ColumnIndex>
-          <RowIndex>1</RowIndex>
-          <ParameterName>p_primary_spouse_only</ParameterName>
-        </CellDefinition>
-        <CellDefinition>
-          <ColumnIndex>2</ColumnIndex>
-          <RowIndex>1</RowIndex>
-          <ParameterName>p_cityname</ParameterName>
-        </CellDefinition>
-        <CellDefinition>
           <ColumnIndex>3</ColumnIndex>
           <RowIndex>1</RowIndex>
+          <ParameterName>p_ignore_activities</ParameterName>
+        </CellDefinition>
+        <CellDefinition>
+          <ColumnIndex>1</ColumnIndex>
+          <RowIndex>2</RowIndex>
           <ParameterName>p_activities</ParameterName>
         </CellDefinition>
         <CellDefinition>
-          <ColumnIndex>0</ColumnIndex>
-          <RowIndex>2</RowIndex>
-          <ParameterName>p_activity_years</ParameterName>
-        </CellDefinition>
-        <CellDefinition>
-          <ColumnIndex>1</ColumnIndex>
+          <ColumnIndex>2</ColumnIndex>
           <RowIndex>2</RowIndex>
           <ParameterName>p_academic_years</ParameterName>
         </CellDefinition>

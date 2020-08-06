@@ -1,31 +1,4 @@
-﻿DECLARE 
-	@p_StartDate date
-	, @p_EndDate date
-	, @p_stateList uniqueidentifier = 'DC23CFDA-A383-E911-80D7-0A253F89019C' -- OK
-	, @p_zipcodeList varchar(9) = '74464'
-	, @p_county varchar(120)-- not found in CRM data entry in person, prospect pages
-	, @p_cityname varchar(120) = 'Tah' -- code concats % for LIKE
-	, @p_veteran varchar(1)-- not found in CRM data entry
-	, @p_household_ind varchar(1) -- APRXREF_HOUSEHOLD_IND -- flag on xref rec linking people at same address
-									-- at same address and other than married, why exclude?
-									-- at same address and married/partnered then primary spouse only flag is same condition
-
-	, @p_include_deceased varchar(1) = 'Y' -- y/n
-	, @p_primary_spouse_only varchar(1) = 'Y' -- y/n
-	, @p_gift_capacity varchar(99)
-	, @p_wealth_engine_des varchar(1)
-	, @p_donor_cats varchar(99) -- aldc / alumni degree completion, alum - degreed slumna/us
-	, @p_exclusion_codes varchar(3) -- ams, nak
-	, @p_mail_codes varchar(99) -- ack - acknowledgements/reminders, acl -alumni/club chapter mailings
-	, @p_special_purpose_types varchar(99) -- nsueg - nsu employee giving design, nsuin - nsu support interest
-	, @p_special_purpose_groups varchar(99) -- acaff - academic affaris, admn - administration
-	, @p_activities varchar(99) = 'A' --'Rookie Bridge Camp' -- Ex: 'Rookie Bridge Camp' or 'A' for all
-	, @p_activity_years varchar(4) = 'A' --'2016'-- list of years
-	, @p_leadership_roles varchar(99) -- stvlead
-	, @p_academic_years varchar(4) = '1999' -- list of years
-	, @p_majors varchar(99) -- 0000 - undeclared, 1100 - business admin
-	, @p_degrees varchar(99) -- a - associates, aa - associates in arts
-	;
+﻿
 /*
 WITH W_CONTACTID_LIST AS(
 	SELECT 
@@ -158,8 +131,7 @@ FROM
 		ON dcb.Datatel_countryId = ab.elcn_country		
 WHERE
 	ab.elcn_StateProvinceId in (@p_stateList)
-	--AND LEFT(ab.elcn_postalcode,5) IN (@p_zipcodeList)
-	--AND ab.elcn_city LIKE COALESCE(@p_cityname+'%','%') 
+
 ;
 
 CREATE NONCLUSTERED INDEX INDX_TMP_ADDRID ON #temp_addresses (elcn_addressId);
@@ -1074,24 +1046,24 @@ FROM
 		GROUP BY
 			elcn_personid 
 	)ACTIVITIES ON const.contactid = activities.elcn_personid
-/*		
+		
 WHERE	
-	(
-		@p_activities = 'A'
-		OR EXISTS(
+	
+		EXISTS(
 			SELECT
 				ib.elcn_name 
 			FROM
 				elcn_involvementBase IB
 			WHERE
 				ib.elcn_personid = const.contactid
-				AND ib.elcn_name in (@p_activities)
-				AND (COALESCE(elcn_ClassYear,elcn_EndYear) IN (@p_activity_years)
-					OR COALESCE(elcn_ClassYear,elcn_EndYear) IS NULL 
-					)
+				AND ib.elcn_name in (@p_activities)						
+			UNION
+			SELECT
+				1 x
+			WHERE 
+				@p_ignore_activities = 'Y'	
 			)
-
-	) AND(
+	AND(
 		EXISTS(
 			SELECT 
 				edu.Degree_Year
@@ -1102,7 +1074,6 @@ WHERE
 				AND edu.Degree_Year in (@p_academic_years)
 		)
 	)
-
 --and const.Primary_Name like '%Mutzig%'
-*/
+
 ;
