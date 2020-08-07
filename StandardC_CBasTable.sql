@@ -1,4 +1,32 @@
-﻿
+﻿DECLARE 
+	@p_StartDate date
+	, @p_EndDate date
+	, @p_stateList uniqueidentifier = 'B823CFDA-A383-E911-80D7-0A253F89019C'
+	, @p_zipcodeList varchar(9) = '74464'
+	, @p_county varchar(120)-- not found in CRM data entry in person, prospect pages
+	, @p_cityname varchar(120) = 'Tah' -- dnu/ too expensive
+	, @p_veteran varchar(1)-- not found in CRM data entry
+	, @p_household_ind varchar(1) -- APRXREF_HOUSEHOLD_IND -- flag on xref rec linking people at same address
+									-- at same address and other than married, why exclude?
+									-- at same address and married/partnered then primary spouse only flag is same condition
+
+	, @p_include_deceased varchar(1) = 'Y' -- y/n
+	, @p_primary_spouse_only varchar(1) = 'Y' -- y/n
+	, @p_gift_capacity varchar(99)
+	, @p_wealth_engine_des varchar(1)
+	, @p_donor_cats varchar(99) -- aldc / alumni degree completion, alum - degreed slumna/us
+	, @p_exclusion_codes varchar(3) -- ams, nak
+	, @p_mail_codes varchar(99) -- ack - acknowledgements/reminders, acl -alumni/club chapter mailings
+	, @p_special_purpose_types varchar(99) -- nsueg - nsu employee giving design, nsuin - nsu support interest
+	, @p_special_purpose_groups varchar(99) -- acaff - academic affaris, admn - administration
+	, @p_activities varchar(99) -- adplc - president's leadership class, 
+	, @p_activity_years varchar(4) -- list of years
+	, @p_leadership_roles varchar(99) -- stvlead
+	, @p_academic_years varchar(4) -- list of years
+	, @p_majors varchar(99) -- 0000 - undeclared, 1100 - business admin
+	, @p_degrees varchar(99) -- a - associates, aa - associates in arts
+	, @p_ignore_activities varchar(1) = 'Y'
+	;
 /*
 WITH W_CONTACTID_LIST AS(
 	SELECT 
@@ -32,8 +60,11 @@ WITH W_CONTACTID_LIST AS(
 SELECT
 	cb.contactid
 	, CASE
-		WHEN cb.elcn_dateofdeath IS NULL THEN 'N'
-		ELSE 'Y'
+		WHEN elcn_PersonStatusId IN ('CF133D0E-4205-4EC8-B3D1-799074F7A72D',
+									'57B3E088-CDD5-4808-9D53-5F530BDCD320',
+									'233C10DC-B283-4C57-866C-52138BF01CEB') 
+			THEN 'Y'
+		ELSE 'N'
 	END DECEASED_IND
 	, cb.elcn_dateofbirth DATE_OF_BIRTH
 	, cb.elcn_PrimaryID pidm
@@ -57,7 +88,10 @@ FROM(
 	WHERE
 		fullname not like '%DO%NOT%USE'
 		AND (@p_include_deceased = 'Y' 
-			OR elcn_dateofdeath is null)
+			OR elcn_PersonStatusId not in ('CF133D0E-4205-4EC8-B3D1-799074F7A72D',
+											'57B3E088-CDD5-4808-9D53-5F530BDCD320',
+											'233C10DC-B283-4C57-866C-52138BF01CEB')
+			)
 		AND statuscode = 1
 		--AND contactbase.contactid in (SELECT contactid from w_contactid_list)
 	) CB
@@ -161,16 +195,6 @@ WHERE
 		OR elcn_enddate IS NULL)
 ;
 CREATE NONCLUSTERED INDEX INDX_TMP_ID_SALU ON #temp_aprsalu (elcn_personId,salu_code);
-
-SELECT DISTINCT  
-	elcn_person personid,
-	datepart(YYYY,elcn_ContributionDate)givingyear,
-	datepart(YYYY,elcn_ContributionDate) -1 prevyear
-INTO
-	#temp_dontations
-FROM
-	elcn_contributiondonorBase 
-;
 
 SELECT elcn_personid, elcn_ratingtypeid, [Value], [Level], [Score]
 INTO #temp_ratings
@@ -308,35 +332,47 @@ ORDER BY
 ;
 CREATE NONCLUSTERED INDEX INDX_TMP_ID ON #temp_activities (elcn_personid);
 
+SELECT DISTINCT  
+	elcn_person personid,
+	datepart(YYYY,elcn_ContributionDate)givingyear--,
+	--datepart(YYYY,elcn_ContributionDate) -1 prevyear
+INTO
+	#temp_dontations
+FROM
+	elcn_contributiondonorBase
+WHERE 
+	elcn_ContributionDate BETWEEN @p_StartDate AND @p_EndDate
+;
+
 with w_get_consec_years AS ( 
 	select personid,
 		givingyear,
-		prevyear,
+		--prevyear,
 		1 consecyears
 	from #temp_dontations
 	union all
 	select d.personid,
 	d.givingyear,
-	d.prevyear,
+	--d.prevyear,
 	cte.consecyears +1 consecyears
 	from #temp_dontations d 
-		inner join w_get_consec_years cte
+		join w_get_consec_years cte
 			on cte.personid = d.personid
 			and d.givingyear -1 = cte.givingyear
 ),
 	w_get_longest_consec_years AS ( 
 	select personid,
 		givingyear,
-		prevyear,
+		--prevyear,
 		1 consecyears
 	from #temp_dontations
 	union all
 	select d.personid,
 	d.givingyear,
-	d.prevyear,
+	--d.prevyear,
 	cte.consecyears +1 consecyears
 	from #temp_dontations d 
-		inner join w_get_consec_years cte
+		join w_get_consec_years cte
 			on cte.personid = d.personid
 			and d.givingyear -1 = cte.givingyear
 )

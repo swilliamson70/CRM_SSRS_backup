@@ -8590,12 +8590,12 @@ OPTION (MAXRECURSION 200);</CommandText>
   <ReportParameters>
     <ReportParameter Name="p_StartDate">
       <DataType>DateTime</DataType>
-      <Prompt>Giving Start Date*</Prompt>
+      <Prompt>Giving Total amount start date*:</Prompt>
       <UsedInQuery>True</UsedInQuery>
     </ReportParameter>
     <ReportParameter Name="p_EndDate">
       <DataType>DateTime</DataType>
-      <Prompt>Giving End Date*</Prompt>
+      <Prompt>Giving Total amount end date*:</Prompt>
     </ReportParameter>
     <ReportParameter Name="p_stateList">
       <DataType>String</DataType>

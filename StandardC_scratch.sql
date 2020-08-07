@@ -1,4 +1,15 @@
-﻿ select * from stringmapbase;
+﻿
+ select * from contactbase; -- elcn_PersonStatusId = '378DE114-EB09-E511-943C-0050568068B7'
+ select * from elcn_statusBase where elcn_statusid = '378DE114-EB09-E511-943C-0050568068B7'; -- current
+ select elcn_statusid, elcn_name from elcn_statusbase where elcn_name like '%Deceased%';
+/*
+CF133D0E-4205-4EC8-B3D1-799074F7A72D	Deceased
+57B3E088-CDD5-4808-9D53-5F530BDCD320	Deceased Review
+233C10DC-B283-4C57-866C-52138BF01CEB	Reported Deceased
+*/
+ select * from elcn_nametypebase ;--where elcn_nametypeid = 'EBC22907-A5CB-4270-8947-C5381D1ECC54';
+ 
+ select * from stringmapbase;
  
  select * from elcn_constituenttypebase;
  select elcn_primaryconstituentaffiliationid from contactbase ;---cb.cb.elcn_primaryconstituentaffiliationid
@@ -1097,4 +1108,50 @@ from
 where 
    statuscode = 1 
 ) t
-order by case when elcn_name = 'No activities' then 1 else 2 end, elcn_name
+order by case when elcn_name = 'No activities' then 1 else 2 end, elcn_name;
+
+
+DECLARE
+	@p_StartDate date = '1900-01-01'
+	,@p_EndDate date = '2999-12-31'
+	;
+
+SELECT DISTINCT  
+	elcn_person personid,
+	datepart(YYYY,elcn_ContributionDate)givingyear
+	--datepart(YYYY,elcn_ContributionDate) -1 prevyear
+INTO
+	#temp_dontations
+FROM
+	elcn_contributiondonorBase
+WHERE 
+	elcn_ContributionDate BETWEEN @p_StartDate AND @p_EndDate
+;
+--select * from #temp_dontations where personid = 'A666DF71-D0C9-4126-A7EB-229EF3B3AE5D';
+
+with w_get_consec_years AS ( 
+	select personid,
+		givingyear,
+		--prevyear,
+		1 consecyears
+	from #temp_dontations
+	union all
+	select d.personid,
+	d.givingyear,
+	--d.prevyear,
+	cte.consecyears +1 consecyears
+	from #temp_dontations d 
+		inner join w_get_consec_years cte
+			on cte.personid = d.personid
+			and d.givingyear -1 = cte.givingyear
+)
+select * from w_get_consec_years where personid = 'A666DF71-D0C9-4126-A7EB-229EF3B3AE5D';
+		SELECT top 100
+			personid,
+			MAX(consecyears) consecyears 
+		FROM
+			w_get_consec_years
+	
+
+where personid = 'A666DF71-D0C9-4126-A7EB-229EF3B3AE5D'
+	GROUP BY personid;
