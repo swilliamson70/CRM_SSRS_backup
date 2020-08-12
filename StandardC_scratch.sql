@@ -1063,7 +1063,8 @@ NOT EXISTS(
 ;
 select * from elcn_stateprovinceBase
 where elcn_stateprovinceid = 'DC23CFDA-A383-E911-80D7-0A253F89019C';
-
+-- KS C823CFDA-A383-E911-80D7-0A253F89019C
+-- TX E323CFDA-A383-E911-80D7-0A253F89019C
 
 WITH    yearlist
       AS ( SELECT   1909 AS year
@@ -1145,7 +1146,12 @@ with w_get_consec_years AS (
 			on cte.personid = d.personid
 			and d.givingyear -1 = cte.givingyear
 )
-select * from w_get_consec_years where personid = 'A666DF71-D0C9-4126-A7EB-229EF3B3AE5D';
+
+select * from 
+	(
+		select *,row_number() over (partition by personid order by givingyear desc, consecyears desc) rn 
+		from w_get_consec_years) t
+where personid = 'A666DF71-D0C9-4126-A7EB-229EF3B3AE5D' and rn = 1;
 		SELECT top 100
 			personid,
 			MAX(consecyears) consecyears 
@@ -1155,3 +1161,247 @@ select * from w_get_consec_years where personid = 'A666DF71-D0C9-4126-A7EB-229EF
 
 where personid = 'A666DF71-D0C9-4126-A7EB-229EF3B3AE5D'
 	GROUP BY personid;
+
+
+SELECT
+	ab.elcn_addressId 
+	, ab.elcn_street1  Street_Line1
+	, ab.elcn_street2  Street_Line2
+	, ab.elcn_City  City
+	, spb.elcn_Abbreviation  State_Province
+	, ab.elcn_postalcode  Postal_Code
+	, ab.elcn_county	County
+	, dcb.Datatel_name	Nation
+INTO
+	#temp_addresses
+FROM
+	elcn_addressBase AB
+	JOIN elcn_stateprovinceBase SPB
+		ON spb.elcn_stateprovinceId = ab.elcn_StateProvinceId
+	JOIN Datatel_countryBase DCB
+		ON dcb.Datatel_countryId = ab.elcn_country	
+;
+
+
+select top 1 * 
+from
+elcn_addressassociationBase AAB 
+		
+		
+	JOIN #temp_addresses AB
+		on aab.elcn_AddressId = ab.elcn_addressId 
+--	JOIN elcn_stateprovinceBase SPB
+--		ON spb.elcn_stateprovinceId = ab.elcn_StateProvinceId
+--	JOIN Datatel_countryBase DCB
+--		ON dcb.Datatel_countryId = ab.elcn_country	
+where aab.elcn_personid = '455E7B7C-70E3-42C0-88D0-1A9284BC9407'
+
+select * from elcn_statusBase where elcn_statusid = '378DE114-EB09-E511-943C-0050568068B7'; -- elcn_AddressStatusId 378DE114-EB09-E511-943C-0050568068B7
+select * from elcn_statusBase where elcn_statusid IN ('CF133D0E-4205-4EC8-B3D1-799074F7A72D',
+									'57B3E088-CDD5-4808-9D53-5F530BDCD320',
+									'233C10DC-B283-4C57-866C-52138BF01CEB') ;
+select * from elcn_formattednamebase;
+SELECT 
+	elcn_personid,
+	CASE elcn_typeid 
+		WHEN '1172C46B-462D-E411-9415-005056804B43' THEN 'CIFE'
+		WHEN '0F72C46B-462D-E411-9415-005056804B43' THEN 'SIFE'
+		WHEN '1B72C46B-462D-E411-9415-005056804B43' THEN 'SIFL'
+		WHEN '89799F16-C4E8-4269-B409-5756998F193F' THEN 'CIFL'
+	END AS SALU_CODE,
+	elcn_formattedname,
+	row_number() over (partition by elcn_personid, elcn_typeid order by elcn_locked desc, modifiedon desc) rn
+into #temp_salu
+FROM
+	elcn_formattednamebase
+WHERE
+	elcn_typeid in ('1172C46B-462D-E411-9415-005056804B43',  
+			    		'0F72C46B-462D-E411-9415-005056804B43',  
+	     				'1B72C46B-462D-E411-9415-005056804B43', 
+		    			'89799F16-C4E8-4269-B409-5756998F193F')  
+	AND elcn_enddate IS NULL
+	and elcn_personid is not null
+;
+
+
+select count(*) from #temp_salu; --195520
+select count(*) from #temp_salu where rn= 1; --189174
+select count(salu_code) from #temp_salu where salu_code = 'CIFE'; --11773
+select count(distinct elcn_personid) from #temp_salu where salu_code = 'CIFE';--11773
+select *,count(elcn_personid) over (partition by elcn_personid) as cife_count from #temp_salu where salu_code = 'CIFE'
+order by cife_count desc;
+
+select count(salu_code) from #temp_salu where salu_code = 'SIFE'; --84050
+select count(distinct elcn_personid) from #temp_salu where salu_code = 'SIFE'; --83061
+select *,count(elcn_personid) over (partition by elcn_personid) as sife_count from #temp_salu where salu_code = 'SIFE'
+order by sife_count desc;
+select count(salu_code) from #temp_salu where salu_code = 'SIFL'; --82578
+select count(salu_code) from #temp_salu where salu_code = 'CIFL'; --11762
+
+select * from elcn_formattednamebase where elcn_personid = 'F912F191-EFF4-4B49-88E7-003F10368907';
+select * from elcn_formattedname where elcn_personid = 'F912F191-EFF4-4B49-88E7-003F10368907';
+
+select count(*) from #temp_salu; --195520 new 190104
+select count(salu_code) from #temp_salu where salu_code = 'CIFE'; --11773 new 11773
+select count(distinct elcn_personid) from #temp_salu where salu_code = 'CIFE';--11773 new 11773
+select *,count(elcn_personid) over (partition by elcn_personid) as cife_count from #temp_salu where salu_code = 'CIFE'
+order by cife_count desc;
+
+select count(salu_code) from #temp_salu where salu_code = 'SIFE'; --84050 new 83991
+select count(distinct elcn_personid) from #temp_salu where salu_code = 'SIFE'; --83061 new 83061
+select *,count(elcn_personid) over (partition by elcn_personid) as sife_count from #temp_salu where salu_code = 'SIFE'
+order by sife_count desc;
+select count(salu_code) from #temp_salu where salu_code = 'SIFL'; --82578
+select count(salu_code) from #temp_salu where salu_code = 'CIFL'; --11762
+
+
+select 
+	'9D67DD91-B3CA-4AA7-BFCC-49BEE53AF420' ContactId
+	, (
+		SELECT
+			SUM(elcn_RecognitionCredit)
+		FROM
+			elcn_contributiondonorBase
+			JOIN elcn_contribution  
+				ON elcn_contributiondonorBase.elcn_contribution = elcn_contribution.elcn_contributionId
+		WHERE
+			elcn_contributiondonorBase.elcn_person = '9D67DD91-B3CA-4AA7-BFCC-49BEE53AF420' --const.ContactId
+			AND elcn_contribution.statuscode = 1
+			AND elcn_contribution.elcn_contributionType IN (344220000, 
+															344220001, 
+															344220004, 
+															344220005) 
+			and datepart(YYYY,elcn_contributiondonorBase.elcn_ContributionDate) = datepart(YYYY,sysdatetime())
+	) Gifts_YTD  
+
+	, (
+		SELECT
+			SUM(elcn_RecognitionCredit)
+		FROM
+			elcn_contributiondonorBase
+			JOIN elcn_contribution  
+				ON elcn_contributiondonorBase.elcn_contribution = elcn_contribution.elcn_contributionId
+		WHERE
+			elcn_contributiondonorBase.elcn_person = '9D67DD91-B3CA-4AA7-BFCC-49BEE53AF420' --const.ContactId
+			AND elcn_contribution.statuscode = 1
+			AND elcn_contribution.elcn_contributionType IN (344220000,
+															344220001, 
+															344220004, 
+															344220005)
+			and datepart(YYYY,elcn_contributiondonorBase.elcn_ContributionDate) = datepart(YYYY,sysdatetime()) -1
+	) Gifts_Year2
+
+	, (
+		SELECT
+			SUM(elcn_RecognitionCredit)
+		FROM
+			elcn_contributiondonorBase
+			JOIN elcn_contribution  
+				ON elcn_contributiondonorBase.elcn_contribution = elcn_contribution.elcn_contributionId
+		WHERE
+			elcn_contributiondonorBase.elcn_person = '9D67DD91-B3CA-4AA7-BFCC-49BEE53AF420' --const.ContactId
+			AND elcn_contribution.statuscode = 1
+			AND elcn_contribution.elcn_contributionType IN (344220000, 
+															344220001,
+															344220004, 
+															344220005) 
+			and datepart(YYYY,elcn_contributiondonorBase.elcn_ContributionDate) = datepart(YYYY,sysdatetime()) -2
+	) Gifts_Year3
+
+	, (
+		SELECT
+			SUM(elcn_RecognitionCredit)
+		FROM
+			elcn_contributiondonorBase
+			JOIN elcn_contribution  
+				ON elcn_contributiondonorBase.elcn_contribution = elcn_contribution.elcn_contributionId
+		WHERE
+			elcn_contributiondonorBase.elcn_person = '9D67DD91-B3CA-4AA7-BFCC-49BEE53AF420' --const.ContactId
+			AND elcn_contribution.statuscode = 1
+			AND elcn_contribution.elcn_contributionType IN (344220000, 
+															344220001, 
+															344220004,
+															344220005)
+			and datepart(YYYY,elcn_contributiondonorBase.elcn_ContributionDate) = datepart(YYYY,sysdatetime()) -3
+	) Gifts_Year4
+;
+
+DECLARE @p_EndDate date = '12/31/2020';
+
+SELECT
+	elcn_person
+	, [0] YTD
+	, [1] Year1
+	, [2] Year2
+	, [3] Year3
+	, [4] Year4
+FROM
+	(
+	SELECT
+		cdb.elcn_person 
+		, cdb.elcn_RecognitionCredit
+		, datepart(YYYY,@p_endDate) - datepart(YYYY,cdb.elcn_ContributionDate) contrib_year
+	FROM
+		elcn_contributiondonorBase cdb
+		JOIN elcn_contribution contrib 
+			ON cdb.elcn_contribution = contrib.elcn_contributionId
+	WHERE
+		cdb.elcn_person = '9D67DD91-B3CA-4AA7-BFCC-49BEE53AF420' --const.ContactId
+		AND contrib.statuscode = 1
+		AND contrib.elcn_contributionType IN (344220000, 
+											  344220001, 
+											  344220004,
+											  344220005)
+		AND cdb.elcn_ContributionDate <= @p_EndDate
+
+	)T PIVOT
+	(	SUM(elcn_recognitioncredit)
+		FOR contrib_year
+		IN ([0], [1], [2], [3], [4])
+	)PVT
+where elcn_person = '9D67DD91-B3CA-4AA7-BFCC-49BEE53AF420';
+
+
+
+
+
+DECLARE @p_StartDate date = '1/1/1900', @p_EndDate date = '12/31/2020';
+
+SELECT DISTINCT 
+	elcn_person
+	, SUM(elcn_RecognitionCredit) OVER (PARTITION BY elcn_person) Total_Giving
+	, SUM(elcn_TotalPremiumFairMarketValue) OVER (PARTITION BY elcn_person) Total_Premiums
+FROM
+	elcn_contributiondonorBase
+	JOIN elcn_contribution  
+		ON elcn_contributiondonorBase.elcn_contribution = elcn_contribution.elcn_contributionId
+WHERE
+	elcn_contribution.statuscode = 1
+	AND elcn_contribution.elcn_contributionType IN (344220000, 
+													344220001, 
+													344220004,
+													344220005) 
+	and elcn_contributiondonorBase.elcn_ContributionDate BETWEEN @p_StartDate AND @p_EndDate
+-- period_totals
+and elcn_person = '9D67DD91-B3CA-4AA7-BFCC-49BEE53AF420';
+
+SELECT DISTINCT 
+	elcn_person
+	, SUM(elcn_contribution.elcn_TotalPremiumFairMarketValue)  Lifetime_Premiums
+	, SUM(elcn_contribution.elcn_marketValue)  Lifetime_Fair_Market_Value
+		FROM
+			elcn_contributiondonorBase
+			JOIN elcn_contribution  
+				ON elcn_contributiondonorBase.elcn_contribution = elcn_contribution.elcn_contributionId
+		WHERE
+		
+			elcn_contribution.statuscode = 1
+			AND elcn_contribution.elcn_contributionType IN (344220000, 
+															344220001, 
+															344220004, 
+															344220005)
+and elcn_person = '9D67DD91-B3CA-4AA7-BFCC-49BEE53AF420'
+GROUP BY elcn_person 
+-- lifetime_totals
+
+

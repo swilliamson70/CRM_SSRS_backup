@@ -1,8 +1,7 @@
 ﻿DECLARE 
-	@p_StartDate date
-	, @p_EndDate date
-	, @p_stateList uniqueidentifier = 'B823CFDA-A383-E911-80D7-0A253F89019C'
-	, @p_zipcodeList varchar(9) = '74464'
+                 
+	 @p_stateList uniqueidentifier = 'E323CFDA-A383-E911-80D7-0A253F89019C' -- TX 'C823CFDA-A383-E911-80D7-0A253F89019C' -- KS 'DC23CFDA-A383-E911-80D7-0A253F89019C' -- ok
+	, @p_zipcodeList varchar(9) = '74331'
 	, @p_county varchar(120)-- not found in CRM data entry in person, prospect pages
 	, @p_cityname varchar(120) = 'Tah' -- dnu/ too expensive
 	, @p_veteran varchar(1)-- not found in CRM data entry
@@ -26,6 +25,7 @@
 	, @p_majors varchar(99) -- 0000 - undeclared, 1100 - business admin
 	, @p_degrees varchar(99) -- a - associates, aa - associates in arts
 	, @p_ignore_activities varchar(1) = 'Y'
+	, @p_ignore_academic_years varchar(1) = 'Y'
 	;
 /*
 WITH W_CONTACTID_LIST AS(
@@ -57,6 +57,7 @@ WITH W_CONTACTID_LIST AS(
 		)
 )
 */
+DECLARE @p_StartDate date, @p_EndDate date;
 SELECT
 	cb.contactid
 	, CASE
@@ -151,6 +152,7 @@ SELECT
 	, ab.elcn_street1  Street_Line1
 	, ab.elcn_street2  Street_Line2
 	, ab.elcn_City  City
+	, spb.elcn_stateprovinceId 
 	, spb.elcn_Abbreviation  State_Province
 	, ab.elcn_postalcode  Postal_Code
 	, ab.elcn_county	County
@@ -165,9 +167,7 @@ FROM
 		ON dcb.Datatel_countryId = ab.elcn_country		
 WHERE
 	ab.elcn_StateProvinceId in (@p_stateList)
-
 ;
-
 CREATE NONCLUSTERED INDEX INDX_TMP_ADDRID ON #temp_addresses (elcn_addressId);
 
 SELECT 
@@ -177,11 +177,9 @@ SELECT
 		WHEN '0F72C46B-462D-E411-9415-005056804B43' THEN 'SIFE'
 		WHEN '1B72C46B-462D-E411-9415-005056804B43' THEN 'SIFL'
 		WHEN '89799F16-C4E8-4269-B409-5756998F193F' THEN 'CIFL'
-		ELSE cast(elcn_typeid as varchar(40))
 	END AS SALU_CODE,
 	elcn_formattedname,
-	elcn_locked, 
-	modifiedon 
+	ROW_NUMBER() OVER (PARTITION BY elcn_personid, elcn_typeid ORDER BY elcn_locked DESC, modifiedon DESC) RN
 INTO
 	#temp_aprsalu
 FROM
@@ -191,10 +189,9 @@ WHERE
 			    		'0F72C46B-462D-E411-9415-005056804B43',  
 	     				'1B72C46B-462D-E411-9415-005056804B43', 
 		    			'89799F16-C4E8-4269-B409-5756998F193F')  
-	AND (elcn_enddate >= SYSDATETIME() 
-		OR elcn_enddate IS NULL)
+	AND elcn_enddate IS NULL
 ;
-CREATE NONCLUSTERED INDEX INDX_TMP_ID_SALU ON #temp_aprsalu (elcn_personId,salu_code);
+CREATE NONCLUSTERED INDEX INDX_TMP_ID_SALU ON #temp_aprsalu (elcn_personId,salu_code,rn);
 
 SELECT elcn_personid, elcn_ratingtypeid, [Value], [Level], [Score]
 INTO #temp_ratings
@@ -206,6 +203,10 @@ FROM(
 		elcn_ratingBase.elcn_ratingvalue
 	FROM
 		elcn_ratingBase
+	WHERE
+		elcn_ratingtypeid in	('88C5BD4A-BF21-4635-B8BB-EBE956F2E5BD'
+								,'1BB294D5-53D7-4815-8963-096802773E6D'
+								,'3DE9ACBB-37E5-45AF-8902-2314FC2A9538')
 ) T PIVOT
 (	
 	MAX(elcn_ratingvalue)
@@ -216,18 +217,21 @@ FROM(
 CREATE NONCLUSTERED INDEX INDX_TMP_ID_RATINGTYPE ON #temp_ratings (elcn_personid, elcn_ratingtypeid);
 
 SELECT
-	elcn_PrimaryMemberPersonId, 
-	elcn_membershipprogramlevelbase.elcn_name ,
-	elcn_statusbase.elcn_name status,
-	elcn_membershipBase.elcn_MembershipNumber , --7701
-	CONVERT(DATE, elcn_membershipBase.elcn_ExpireDate) elcn_ExpireDate  -- null
-INTO #temp_membership
+	mb.elcn_PrimaryMemberPersonId
+	, mpl.elcn_name
+	, sb.elcn_name status_desc
+	, mb.elcn_MembershipNumber  --7701
+	, CONVERT(DATE, mb.elcn_ExpireDate) elcn_ExpireDate  -- null
+	, ROW_NUMBER() OVER (PARTITION BY mb.elcn_PrimaryMemberPersonId, mpl.elcn_name
+				ORDER BY COALESCE(mb.elcn_expiredate,'31-DEC-2999') DESC) rn
+INTO 
+	#temp_membership
 FROM
-	elcn_membershipBase
-	JOIN elcn_membershipprogramlevelbase
-		ON elcn_membershipBase.elcn_MembershipLevelId = elcn_membershipprogramlevelid
-	JOIN elcn_statusbase
-		ON elcn_membershipBase.elcn_MembershipStatusId  = elcn_statusid
+	elcn_membershipBase MB
+	JOIN elcn_membershipprogramlevelbase MPL
+		ON mb.elcn_MembershipLevelId = mpl.elcn_membershipprogramlevelId
+	JOIN elcn_statusbase SB
+		ON mb.elcn_MembershipStatusId  = sb.elcn_statusid
 ;
 CREATE NONCLUSTERED INDEX INDX_TMP_ID_MEMBERSHIP ON #temp_membership (elcn_primarymemberpersonid);
 
@@ -332,44 +336,61 @@ ORDER BY
 ;
 CREATE NONCLUSTERED INDEX INDX_TMP_ID ON #temp_activities (elcn_personid);
 
+SELECT
+	elcn_person
+	, [0] YTD
+	, [1] Year1
+	, [2] Year2
+	, [3] Year3
+	, [4] Year4
+INTO
+	#temp_recognitioncredit
+FROM
+	(
+	SELECT
+		cdb.elcn_person 
+		, cdb.elcn_RecognitionCredit
+		, datepart(YYYY,@p_EndDate) - datepart(YYYY,cdb.elcn_ContributionDate) contrib_year
+	FROM
+		elcn_contributiondonorBase cdb
+		JOIN elcn_contribution contrib 
+			ON cdb.elcn_contribution = contrib.elcn_contributionId
+	WHERE
+		cdb.elcn_person = '9D67DD91-B3CA-4AA7-BFCC-49BEE53AF420' --const.ContactId
+		AND contrib.statuscode = 1
+		AND contrib.elcn_contributionType IN (344220000, 
+											  344220001, 
+											  344220004,
+											  344220005)
+		AND cdb.elcn_ContributionDate <= @p_EndDate
+
+	)T PIVOT
+	(	SUM(elcn_recognitioncredit)
+		FOR contrib_year
+		IN ([0], [1], [2], [3], [4])
+	)PVT;
+
+CREATE NONCLUSTERED INDEX INDX_TMP_ID ON #temp_recognitioncredit (elcn_person);
+
 SELECT DISTINCT  
 	elcn_person personid,
-	datepart(YYYY,elcn_ContributionDate)givingyear--,
-	--datepart(YYYY,elcn_ContributionDate) -1 prevyear
+	datepart(YYYY,elcn_ContributionDate)givingyear
 INTO
 	#temp_dontations
 FROM
 	elcn_contributiondonorBase
 WHERE 
-	elcn_ContributionDate BETWEEN @p_StartDate AND @p_EndDate
+	elcn_ContributionDate <= @p_EndDate
 ;
 
 with w_get_consec_years AS ( 
 	select personid,
 		givingyear,
-		--prevyear,
 		1 consecyears
 	from #temp_dontations
 	union all
 	select d.personid,
 	d.givingyear,
-	--d.prevyear,
-	cte.consecyears +1 consecyears
-	from #temp_dontations d 
-		join w_get_consec_years cte
-			on cte.personid = d.personid
-			and d.givingyear -1 = cte.givingyear
-),
-	w_get_longest_consec_years AS ( 
-	select personid,
-		givingyear,
-		--prevyear,
-		1 consecyears
-	from #temp_dontations
-	union all
-	select d.personid,
-	d.givingyear,
-	--d.prevyear,
 	cte.consecyears +1 consecyears
 	from #temp_dontations d 
 		join w_get_consec_years cte
@@ -387,7 +408,6 @@ SELECT
 	, const.pref_first_name Preferred_First_Name
 	, const.Last_Name
 	, const.maiden_name
-
 	, COALESCE(cife_salu.elcn_formattedname,sife_salu.elcn_formattedname) PREFERRED_FULL_W_SALUTATION
 	, COALESCE(cifl_salu.elcn_formattedname,sifl_salu.elcn_formattedname) PREFERRED_SHORT_W_SALUTATION
 	, sife_salu.elcn_formattedname SIFE
@@ -535,10 +555,6 @@ SELECT
 	, ratings2.rating_score RATING_AMOUNT2
 	, ratings2.rating_value RATING2
 	, ratings2.rating_level RATING_LEVEL2
-	, null RATING_TYPE3
-	, null RATING_AMOUNT3
-	, null RATING3
-	, null RATING_LEVEL3
 
 	, (
 		SELECT
@@ -555,94 +571,31 @@ SELECT
 															344220004, 
 															344220005) 
 			and elcn_contributiondonorBase.elcn_ContributionDate BETWEEN @p_StartDate AND @p_EndDate
-		) Lifetime_Number_of_Gifts 
+		) Number_of_Gifts_For_Period
 
 	, const.Largest_Contribution_Amount 
 	, CONVERT(VARCHAR,const.elcn_LastContributionDate,101) Last_Contibution_Date 
 
-	, (
-		SELECT
-			SUM(elcn_RecognitionCredit)
-		FROM
-			elcn_contributiondonorBase
-			JOIN elcn_contribution  
-				ON elcn_contributiondonorBase.elcn_contribution = elcn_contribution.elcn_contributionId
-		WHERE
-			elcn_contributiondonorBase.elcn_person = const.ContactId
-			AND elcn_contribution.statuscode = 1
-			AND elcn_contribution.elcn_contributionType IN (344220000, 
-															344220001, 
-															344220004, 
-															344220005) 
-			and datepart(YYYY,elcn_contributiondonorBase.elcn_ContributionDate) = datepart(YYYY,sysdatetime())
-	) Gifts_YTD  
-
-	, (
-		SELECT
-			SUM(elcn_RecognitionCredit)
-		FROM
-			elcn_contributiondonorBase
-			JOIN elcn_contribution  
-				ON elcn_contributiondonorBase.elcn_contribution = elcn_contribution.elcn_contributionId
-		WHERE
-			elcn_contributiondonorBase.elcn_person = const.ContactId
-			AND elcn_contribution.statuscode = 1
-			AND elcn_contribution.elcn_contributionType IN (344220000,
-															344220001, 
-															344220004, 
-															344220005)
-			and datepart(YYYY,elcn_contributiondonorBase.elcn_ContributionDate) = datepart(YYYY,sysdatetime()) -1
-	) Gifts_Year2
-
-	, (
-		SELECT
-			SUM(elcn_RecognitionCredit)
-		FROM
-			elcn_contributiondonorBase
-			JOIN elcn_contribution  
-				ON elcn_contributiondonorBase.elcn_contribution = elcn_contribution.elcn_contributionId
-		WHERE
-			elcn_contributiondonorBase.elcn_person = const.ContactId
-			AND elcn_contribution.statuscode = 1
-			AND elcn_contribution.elcn_contributionType IN (344220000, 
-															344220001,
-															344220004, 
-															344220005) 
-			and datepart(YYYY,elcn_contributiondonorBase.elcn_ContributionDate) = datepart(YYYY,sysdatetime()) -2
-	) Gifts_Year3
-
-	, (
-		SELECT
-			SUM(elcn_RecognitionCredit)
-		FROM
-			elcn_contributiondonorBase
-			JOIN elcn_contribution  
-				ON elcn_contributiondonorBase.elcn_contribution = elcn_contribution.elcn_contributionId
-		WHERE
-			elcn_contributiondonorBase.elcn_person = const.ContactId
-			AND elcn_contribution.statuscode = 1
-			AND elcn_contribution.elcn_contributionType IN (344220000, 
-															344220001, 
-															344220004,
-															344220005)
-			and datepart(YYYY,elcn_contributiondonorBase.elcn_ContributionDate) = datepart(YYYY,sysdatetime()) -3
-	) Gifts_Year4
+	, recognitioncredit.YTD Gifts_YTD
+	, recognitioncredit.Year1 Gifts_Year2
+	, recognitioncredit.Year2 Gifts_Year3
+	, recognitioncredit.Year3 Gifts_Year4
 	
 	, longest_consec.longest_consec_years  LONGEST_CONS_YEARS_GIVEN
-	, consec.consecyears RECENT_CONSECUTIVE_YEARS
+	, consec.prev_consec_years RECENT_CONSECUTIVE_YEARS
 
 	, gen_membership.elcn_name MEMBERSHIP_NAME
-	, gen_membership.status MEMBERSHIP_STATUS
+	, gen_membership.status_desc MEMBERSHIP_STATUS
 	, gen_membership.elcn_membershipnumber MEMBERSHIP_NUMBER
 	, gen_membership.elcn_expiredate EXPIRATION_DATE
 
 	, won_membership.elcn_name WON_MEMBERSHIP_NAME
-	, won_membership.status WON_MEMBERSHIP_STATUS
+	, won_membership.status_desc WON_MEMBERSHIP_STATUS
 	, won_membership.elcn_membershipnumber WON_MEMBERSHIP_NUMBER
 	, won_membership.elcn_expiredate	WON_EXPIRATION_DATE
 
 	, fan_membership.elcn_name FAN_MEMBERSHIP_NAME
-	, fan_membership.status FAN_MEMBERSHIP_STATUS
+	, fan_membership.status_desc FAN_MEMBERSHIP_STATUS
 	, fan_membership.elcn_membershipnumber FAN_MEMBERSHIP_NUMBER
 	, fan_membership.elcn_expiredate FAN_EXPIRATION_DATE
 
@@ -668,124 +621,14 @@ SELECT
 		ELSE null
 	END Business_Phone_Preferred 
 
-	, (
-		SELECT
-			SUM(elcn_contributionBase.elcn_Amount)
-		FROM
-			elcn_contribution 
-			JOIN elcn_contributiondonorBase 
-				ON elcn_contribution.elcn_contributionId = elcn_contributiondonorBase.elcn_contribution
-			JOIN elcn_contributionBase 
-				ON elcn_contribution.elcn_PaymentforContribution = elcn_contributionBase.elcn_contributionId
-		WHERE
-			elcn_contributiondonorBase.elcn_person = const.ContactId
-			AND elcn_contributionBase.statuscode = 1
-			AND elcn_contribution.elcn_contributionType = 344220003 
-			AND elcn_contributiondonorBase.elcn_AssociationTypeId = '36FA0E30-6248-E411-941F-0050568068B8'
-	) Lifetime_Pledge_Payments 
-	
-	, (
-		SELECT
-			SUM(elcn_contributionBase.elcn_Amount)
-		FROM
-			elcn_contribution 
-			JOIN elcn_contributiondonorBase 
-				ON elcn_contribution.elcn_contributionId = elcn_contributiondonorBase.elcn_contribution
-			JOIN elcn_contributionBase 
-				ON elcn_contribution.elcn_PaymentforContribution = elcn_contributionBase.elcn_contributionId
-		WHERE
-			elcn_contributiondonorBase.elcn_person = const.ContactId
-			AND elcn_contributionBase.statuscode = 1
-			AND elcn_contribution.elcn_contributionType = 344220003 
-			AND elcn_contributiondonorBase.elcn_ContributionDate BETWEEN @p_StartDate AND @p_EndDate
-			AND elcn_contributiondonorBase.elcn_AssociationTypeId = '36FA0E30-6248-E411-941F-0050568068B8' 
-	) Total_Pledge_Payments 
-
+	, lifetime_pledge.pledge_total Lifetime_Pledge_Payments 
+	, period_pledge.pledge_total Total_Pledge_Payments 
 	, const.Lifetime_Giving
-
-	, ( 
-		SELECT
-			SUM(elcn_RecognitionCredit)
-		FROM
-			elcn_contributiondonorBase
-			JOIN elcn_contribution  
-				ON elcn_contributiondonorBase.elcn_contribution = elcn_contribution.elcn_contributionId
-		WHERE
-			elcn_contributiondonorBase.elcn_person = const.ContactId
-			AND elcn_contribution.statuscode = 1
-			AND elcn_contribution.elcn_contributionType IN (344220000, 
-															344220001, 
-															344220004,
-															344220005) 
-			and elcn_contributiondonorBase.elcn_ContributionDate BETWEEN @p_StartDate AND @p_EndDate
-	) Total_Giving
-
-	, (
-		SELECT
-			SUM(elcn_contribution.elcn_TotalPremiumFairMarketValue)
-		FROM
-			elcn_contributiondonorBase
-			JOIN elcn_contribution  
-				ON elcn_contributiondonorBase.elcn_contribution = elcn_contribution.elcn_contributionId
-		WHERE
-			elcn_contributiondonorbase.elcn_person = const.ContactId
-			AND elcn_contribution.statuscode = 1
-			AND elcn_contribution.elcn_contributionType IN (344220000, 
-															344220001, 
-															344220004, 
-															344220005) 
-	) Lifetime_Premiums
-
-	, (
-		SELECT
-			SUM(elcn_contribution.elcn_TotalPremiumFairMarketValue)
-		FROM
-			elcn_contributiondonorBase
-			JOIN elcn_contribution  
-				ON elcn_contributiondonorBase.elcn_contribution = elcn_contribution.elcn_contributionId
-		WHERE
-			elcn_contributiondonorbase.elcn_person = const.ContactId
-			AND elcn_contribution.statuscode = 1
-			AND elcn_contribution.elcn_contributionType IN (344220000, 
-															344220001, 
-															344220004, 
-															344220005) 
-			and elcn_contributiondonorBase.elcn_ContributionDate BETWEEN @p_StartDate AND @p_EndDate
-	) Total_Premiums
-
-	, (
-		SELECT
-			SUM(elcn_contribution.elcn_marketValue)
-		FROM
-			elcn_contributiondonorBase
-			JOIN elcn_contribution  
-				ON elcn_contributiondonorBase.elcn_contribution = elcn_contribution.elcn_contributionId
-		WHERE
-			elcn_contributiondonorBase.elcn_person = const.ContactId
-			AND elcn_contribution.statuscode = 1
-			AND elcn_contribution.elcn_contributionType IN (344220000, 
-															344220001, 
-															344220004, 
-															344220005) 
-			
-	) Lifetime_Fair_Market_Value
-
-	, (
-		SELECT
-			SUM(elcn_contribution.elcn_marketValue)
-		FROM
-			elcn_contributiondonorBase
-			JOIN elcn_contribution  
-				ON elcn_contributiondonorBase.elcn_contribution = elcn_contribution.elcn_contributionId
-		WHERE
-			elcn_contributiondonorBase.elcn_person = const.ContactId
-			AND elcn_contribution.statuscode = 1
-			AND elcn_contribution.elcn_contributionType IN (344220000, 
-															344220001, 
-															344220004, 
-															344220005) 
-			and elcn_contributiondonorBase.elcn_ContributionDate BETWEEN @p_StartDate AND @p_EndDate
-	) Total_Fair_Market_Value 
+	, period_totals.Total_Giving
+	, lifetime_totals.Lifetime_Premiums
+	, period_totals.Total_Premiums 
+	, lifetime_totals.Lifetime_Fair_Market_Value
+	, period_totals.Total_Fair_Market_Value 
 
 	, prt.elcn_type	Relationship
 	, spouse_p.fullname Relation_Name
@@ -818,65 +661,72 @@ SELECT
 FROM
 	#temp_const CONST
 
-	JOIN elcn_addressassociationBase AAB 
-		ON aab.elcn_personId = const.ContactId 
-		AND aab.elcn_Preferred =1
-	JOIN elcn_addresstypeBase ATB 
-		ON atb.elcn_addresstypeId = aab.elcn_AddressTypeId
-	JOIN #temp_addresses ADDRESSES
-		ON addresses.elcn_addressId = aab.elcn_AddressId
+	LEFT JOIN(
+		SELECT 
+			aab.*
+			,ROW_NUMBER() OVER (PARTITION BY elcn_personID 
+								ORDER BY CASE WHEN sb.elcn_name = 'Current' THEN 1 ELSE 2 END, 
+									aab.elcn_preferred DESC, 
+									COALESCE(aab.elcn_enddate,'12/31/2999') DESC) RN
+		FROM 
+			elcn_addressassociationBase AAB
+			JOIN elcn_statusbase SB
+				ON aab.elcn_AddressStatusId = elcn_statusid
+		) AAB 
+		ON const.ContactId = aab.elcn_personId
+		AND aab.rn = 1
+	JOIN #temp_addresses ADDRESSES -- state filtered
+		ON aab.elcn_AddressId = addresses.elcn_addressId  
+	LEFT JOIN elcn_addresstypeBase ATB 
+		ON  aab.elcn_AddressTypeId = atb.elcn_addresstypeId
 
 	LEFT JOIN(
 		SELECT
-			elcn_personid,
-			elcn_formattedname,
-			ROW_NUMBER() OVER (PARTITION BY elcn_personid ORDER BY elcn_locked DESC, modifiedon DESC) RN
+			elcn_personid
+			, elcn_formattedname
 		FROM
 			#temp_aprsalu salu
 		WHERE
 			salu.salu_code = 'CIFE'
+			AND salu.rn = 1
 		) CIFE_SALU 
 			ON const.contactid = cife_salu.elcn_personid
-			AND cife_salu.rn = 1
 	LEFT JOIN(
 		SELECT
-			elcn_personid,
-			elcn_formattedname,
-			ROW_NUMBER() OVER (PARTITION BY elcn_personid ORDER BY elcn_locked DESC, modifiedon DESC) RN
+			elcn_personid
+			, elcn_formattedname
 		FROM
 			#temp_aprsalu salu
 		WHERE
 			salu.salu_code = 'SIFE'
+			AND salu.rn = 1
 		) SIFE_SALU 
 			ON const.contactid = sife_salu.elcn_personid
-			AND sife_salu.rn = 1
 	LEFT JOIN(
 		SELECT 
-			elcn_personid,
-			elcn_formattedname,
-			ROW_NUMBER() OVER (PARTITION BY elcn_personid ORDER BY elcn_locked DESC, modifiedon DESC) RN
+			elcn_personid
+			, elcn_formattedname
 		FROM
 			#temp_aprsalu salu
 		WHERE
 			salu.salu_code = 'CIFL'
+			AND salu.rn = 1
 		) CIFL_SALU 
 			ON const.contactid = cifl_salu.elcn_personid
-			AND cifl_salu.rn = 1
 	LEFT JOIN(
 		SELECT 
-			elcn_personid,
-			elcn_formattedname,
-			ROW_NUMBER() OVER (PARTITION BY elcn_personid ORDER BY elcn_locked DESC, modifiedon DESC) RN
+			elcn_personid
+			, elcn_formattedname
 		FROM
 			#temp_aprsalu salu
 		WHERE
 			salu.salu_code = 'SIFL'
+			AND salu.rn = 1
 		) SIFL_SALU 
 			ON const.contactid = sifl_salu.elcn_personid
-			AND sifl_salu.rn = 1
 
 	LEFT JOIN elcn_constituentaffiliationBase cab 
-		ON cab.elcn_constituentaffiliationId = const.elcn_primaryconstituentaffiliationid
+		ON const.elcn_primaryconstituentaffiliationid = cab.elcn_constituentaffiliationId 
 	LEFT JOIN(
 		SELECT 
 			elcn_constituenttypeBase.*,
@@ -889,7 +739,7 @@ FROM
 				AND FilteredViewName = 'Filteredelcn_constituenttype'
 				AND attributeName = 'elcn_category'
 
-		) CTB ON ctb.elcn_constituenttypeID = cab.elcn_ConstituentTypeId
+		) CTB ON cab.elcn_ConstituentTypeId = ctb.elcn_constituenttypeID  
 
 	LEFT JOIN(
 		SELECT
@@ -898,7 +748,7 @@ FROM
 		FROM
 			#temp_ratings TR
 		WHERE
-			elcn_ratingtypeid =  '88C5BD4A-BF21-4635-B8BB-EBE956F2E5BD'
+			elcn_ratingtypeid =  '88C5BD4A-BF21-4635-B8BB-EBE956F2E5BD' 
 	) JFSG_EST_CAP ON const.ContactId = jfsg_est_cap.elcn_personid  
 
 	LEFT JOIN(
@@ -927,75 +777,79 @@ FROM
 			elcn_ratingtypeid = '3DE9ACBB-37E5-45AF-8902-2314FC2A9538'
 		)RATINGS2 ON const.contactid = ratings2.elcn_personid  
 
+	LEFT JOIN #temp_recognitioncredit recognitioncredit
+		ON const.ContactId = recognitioncredit.elcn_person
+
 	LEFT JOIN(
 		SELECT
 			personid,
-			MAX(consecyears) consecyears 
+			consecyears PREV_CONSEC_YEARS
 		FROM
-			w_get_consec_years
-		GROUP BY personid
+			(
+				SELECT 
+					personid
+					, givingyear
+					, consecyears
+					, ROW_NUMBER() OVER (PARTITION BY personid ORDER BY givingyear DESC, consecyears DESC) RN
+				FROM
+					w_get_consec_years
+			) T
+		WHERE 
+			rn = 1
 		)CONSEC ON const.contactid = consec.personid 
 	LEFT JOIN(
 		SELECT
 			personid,
 			MAX(consecyears) LONGEST_CONSEC_YEARS
 		FROM
-			w_get_longest_consec_years
+			w_get_consec_years
 		GROUP BY personid
 		)LONGEST_CONSEC on const.contactid = longest_consec.personid
 
 	LEFT JOIN(
 		SELECT
-			elcn_PrimaryMemberPersonId,
-			elcn_name,
-			status,
-			elcn_membershipnumber,
-			elcn_expiredate,
-			ROW_NUMBER() OVER (PARTITION BY elcn_PrimaryMemberPersonId
-				ORDER BY ISNULL(elcn_expiredate,'31-DEC-2999') DESC) rn
+			elcn_PrimaryMemberPersonId
+			, elcn_name
+			, status_desc
+			, elcn_membershipnumber
+			, elcn_expiredate
 		FROM
 			#temp_membership
 		WHERE
 			(	elcn_name not like 'FAN%'
 				AND elcn_name not like 'WON%'
-			) 		
+			) AND rn = 1
 	) GEN_MEMBERSHIP ON const.contactid = gen_membership.elcn_PrimaryMemberPersonId
-		AND gen_membership.rn = 1
 
 	LEFT JOIN(
 		SELECT
-			elcn_PrimaryMemberPersonId,
-			elcn_name,
-			status,
-			elcn_membershipnumber,
-			elcn_expiredate,
-			ROW_NUMBER() OVER (PARTITION BY elcn_PrimaryMemberPersonId
-				ORDER BY ISNULL(elcn_expiredate,'31-DEC-2999') DESC) rn
+			elcn_PrimaryMemberPersonId
+			, elcn_name
+			, status_desc
+			, elcn_membershipnumber
+			, elcn_expiredate
 		FROM
 			#temp_membership
 		WHERE
 			elcn_name like 'FAN%'
+			AND rn = 1
 	) FAN_MEMBERSHIP ON const.contactid = fan_membership.elcn_PrimaryMemberPersonId
-			AND fan_membership.rn = 1
 
 	LEFT JOIN(
 		SELECT
-			elcn_PrimaryMemberPersonId,
-			elcn_name,
-			status,
-			elcn_membershipnumber,
-			elcn_expiredate,
-			ROW_NUMBER() OVER (PARTITION BY elcn_PrimaryMemberPersonId
-				ORDER BY ISNULL(elcn_expiredate,'31-DEC-2999') DESC) rn
+			elcn_PrimaryMemberPersonId
+			, elcn_name
+			, status_desc
+			, elcn_membershipnumber
+			, elcn_expiredate
 		FROM
 			#temp_membership
 		WHERE
 			elcn_name like 'WON%'
 	) WON_MEMBERSHIP ON const.contactid = won_membership.elcn_PrimaryMemberPersonId
-			AND won_membership.rn = 1
 
 	LEFT JOIN elcn_emailaddressbase eab
-		ON eab.elcn_personid = const.contactid 
+		ON  const.contactid = eab.elcn_personid 
 		AND eab.elcn_preferred = 1
 
 	LEFT JOIN #temp_email_slot email_slot
@@ -1037,8 +891,82 @@ FROM
 			elcn_type = 'Business'
 		)BUSPHONE ON const.contactid = busphone.elcn_personid
 
+	LEFT JOIN(
+		SELECT
+		    elcn_person 
+			, SUM(elcn_contributionBase.elcn_Amount) pledge_total
+		FROM
+			elcn_contribution 
+			JOIN elcn_contributiondonorBase 
+				ON elcn_contribution.elcn_contributionId = elcn_contributiondonorBase.elcn_contribution
+			JOIN elcn_contributionBase 
+				ON elcn_contribution.elcn_PaymentforContribution = elcn_contributionBase.elcn_contributionId
+		WHERE
+			elcn_contributionBase.statuscode = 1
+			AND elcn_contribution.elcn_contributionType = 344220003 
+			AND elcn_contributiondonorBase.elcn_AssociationTypeId = '36FA0E30-6248-E411-941F-0050568068B8'
+		GROUP BY elcn_person 
+	) Lifetime_Pledge ON const.ContactId = Lifetime_Pledge.elcn_person
+	
+	LEFT JOIN(
+		SELECT
+			elcn_person
+			, SUM(elcn_contributionBase.elcn_Amount) pledge_total
+		FROM
+			elcn_contribution 
+			JOIN elcn_contributiondonorBase 
+				ON elcn_contribution.elcn_contributionId = elcn_contributiondonorBase.elcn_contribution
+			JOIN elcn_contributionBase 
+				ON elcn_contribution.elcn_PaymentforContribution = elcn_contributionBase.elcn_contributionId
+		WHERE
+			elcn_contributionBase.statuscode = 1
+			AND elcn_contribution.elcn_contributionType = 344220003 
+			AND elcn_contributiondonorBase.elcn_ContributionDate BETWEEN @p_StartDate AND @p_EndDate
+			AND elcn_contributiondonorBase.elcn_AssociationTypeId = '36FA0E30-6248-E411-941F-0050568068B8' 
+		GROUP BY elcn_person 
+	) period_pledge ON const.ContactId = period_pledge.elcn_person
+
+	LEFT JOIN(
+		SELECT DISTINCT 
+			elcn_person
+			, SUM(elcn_RecognitionCredit) Total_Giving
+			, SUM(elcn_TotalPremiumFairMarketValue)  Total_Premiums
+			, SUM(elcn_contribution.elcn_marketValue) Total_Fair_Market_Value
+		FROM
+			elcn_contributiondonorBase
+			JOIN elcn_contribution  
+				ON elcn_contributiondonorBase.elcn_contribution = elcn_contribution.elcn_contributionId
+		WHERE
+			elcn_contribution.statuscode = 1
+			AND elcn_contribution.elcn_contributionType IN (344220000, 
+															344220001, 
+															344220004,
+															344220005) 
+			and elcn_contributiondonorBase.elcn_ContributionDate BETWEEN @p_StartDate AND @p_EndDate
+		GROUP BY elcn_person 
+			)period_totals ON const.ContactId = period_totals.elcn_person
+	LEFT JOIN(
+		SELECT DISTINCT 
+			elcn_person
+			, SUM(elcn_contribution.elcn_TotalPremiumFairMarketValue)  Lifetime_Premiums
+			, SUM(elcn_contribution.elcn_marketValue)  Lifetime_Fair_Market_Value
+		FROM
+			elcn_contributiondonorBase
+			JOIN elcn_contribution  
+				ON elcn_contributiondonorBase.elcn_contribution = elcn_contribution.elcn_contributionId
+		WHERE
+		
+			elcn_contribution.statuscode = 1
+			AND elcn_contribution.elcn_contributionType IN (344220000, 
+															344220001, 
+															344220004, 
+															344220005)
+		GROUP BY 
+			elcn_person 
+		)lifetime_totals ON const.ContactID = lifetime_totals.elcn_person
+
 	LEFT JOIN elcn_personalrelationshipBase SPOUSE_LINK 
-		ON spouse_link.elcn_Person1Id = const.ContactId
+		ON const.ContactId = spouse_link.elcn_Person1Id
 			AND spouse_link.elcn_RelationshipType1ID IN ( '42295D4F-A6EE-E411-942F-005056804B43', 
 														'4F665855-A3B8-E911-80D8-0A253F89019C',
 														'62295D4F-A6EE-E411-942F-005056804B43',
@@ -1048,7 +976,7 @@ FROM
 	LEFT JOIN elcn_personalrelationshiptype prt 
 		ON spouse_link.elcn_RelationshipType1Id  = prt.elcn_personalrelationshiptypeid 
 	LEFT JOIN ContactBase spouse_p 
-		ON spouse_p.ContactId = spouse_link.elcn_Person2Id
+		ON spouse_link.elcn_Person2Id = spouse_p.ContactId
 
 	LEFT JOIN #temp_education edu_1 
 		ON edu_1.elcn_PersonId = const.ContactID 
@@ -1083,8 +1011,7 @@ FROM
 			elcn_personid 
 	)ACTIVITIES ON const.contactid = activities.elcn_personid
 		
-WHERE	
-	
+WHERE		
 		EXISTS(
 			SELECT
 				ib.elcn_name 
@@ -1108,8 +1035,15 @@ WHERE
 			WHERE
 				edu.elcn_PersonId = const.contactid
 				AND edu.Degree_Year in (@p_academic_years)
+			UNION
+			SELECT
+				1 x
+			WHERE
+				@p_ignore_academic_years = 'Y'
 		)
 	)
---and const.Primary_Name like '%Mutzig%'
 
+--and const.Primary_Name like '%Mutzig%'
+--and id in ('N00149607','N00148562','N00005419')
+and const.ContactId = '9D67DD91-B3CA-4AA7-BFCC-49BEE53AF420'
 ;

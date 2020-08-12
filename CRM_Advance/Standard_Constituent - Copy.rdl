@@ -21,12 +21,6 @@
           <QueryParameter Name="@p_stateList">
             <Value>=Parameters!p_stateList.Value</Value>
           </QueryParameter>
-          <QueryParameter Name="@p_StartDate">
-            <Value>=Parameters!p_StartDate.Value</Value>
-          </QueryParameter>
-          <QueryParameter Name="@p_EndDate">
-            <Value>=Parameters!p_EndDate.Value</Value>
-          </QueryParameter>
           <QueryParameter Name="@p_activities">
             <Value>=Parameters!p_activities.Value</Value>
           </QueryParameter>
@@ -36,43 +30,19 @@
           <QueryParameter Name="@p_academic_years">
             <Value>=Parameters!p_academic_years.Value</Value>
           </QueryParameter>
+          <QueryParameter Name="@p_ignore_academic_years">
+            <Value>=Parameters!p_ignore_academic_years.Value</Value>
+          </QueryParameter>
         </QueryParameters>
-        <CommandText>
-/*
-WITH W_CONTACTID_LIST AS(
-	SELECT 
-		contactid
-	FROM
-		contactbase
-	WHERE
-		(@p_primary_spouse_only = 'N'
-		OR NOT EXISTS ( 
-				SELECT	
-					1 X
-				FROM
-					elcn_personalrelationshipBase prb
-				WHERE
-					(prb.elcn_Person1Id = contactbase.contactid 
-						OR prb.elcn_Person2Id = contactbase.contactid)
-					AND prb.elcn_PrimarySpouseId &lt;&gt; contactbase.contactid 
-					AND prb.elcn_RelationshipType1Id IN ( '42295D4F-A6EE-E411-942F-005056804B43', 
-														'4F665855-A3B8-E911-80D8-0A253F89019C',
-														'62295D4F-A6EE-E411-942F-005056804B43',
-														'43665855-A3B8-E911-80D8-0A253F89019C')	
-					AND elcn_EndDate is null
-					AND statuscode = 1
-			)
-		) AND(
-			@p_include_deceased = 'Y'
-			OR contactbase.elcn_dateofdeath IS NULL
-		)
-)
-*/
+        <CommandText>DECLARE @p_StartDate date, @p_EndDate date;
 SELECT
 	cb.contactid
 	, CASE
-		WHEN cb.elcn_dateofdeath IS NULL THEN 'N'
-		ELSE 'Y'
+		WHEN elcn_PersonStatusId IN ('CF133D0E-4205-4EC8-B3D1-799074F7A72D',
+									'57B3E088-CDD5-4808-9D53-5F530BDCD320',
+									'233C10DC-B283-4C57-866C-52138BF01CEB') 
+			THEN 'Y'
+		ELSE 'N'
 	END DECEASED_IND
 	, cb.elcn_dateofbirth DATE_OF_BIRTH
 	, cb.elcn_PrimaryID pidm
@@ -96,7 +66,10 @@ FROM(
 	WHERE
 		fullname not like '%DO%NOT%USE'
 		AND (@p_include_deceased = 'Y' 
-			OR elcn_dateofdeath is null)
+			OR elcn_PersonStatusId not in ('CF133D0E-4205-4EC8-B3D1-799074F7A72D',
+											'57B3E088-CDD5-4808-9D53-5F530BDCD320',
+											'233C10DC-B283-4C57-866C-52138BF01CEB')
+			)
 		AND statuscode = 1
 		--AND contactbase.contactid in (SELECT contactid from w_contactid_list)
 	) CB
@@ -156,6 +129,7 @@ SELECT
 	, ab.elcn_street1  Street_Line1
 	, ab.elcn_street2  Street_Line2
 	, ab.elcn_City  City
+	, spb.elcn_stateprovinceId 
 	, spb.elcn_Abbreviation  State_Province
 	, ab.elcn_postalcode  Postal_Code
 	, ab.elcn_county	County
@@ -170,9 +144,7 @@ FROM
 		ON dcb.Datatel_countryId = ab.elcn_country		
 WHERE
 	ab.elcn_StateProvinceId in (@p_stateList)
-
 ;
-
 CREATE NONCLUSTERED INDEX INDX_TMP_ADDRID ON #temp_addresses (elcn_addressId);
 
 SELECT 
@@ -182,11 +154,9 @@ SELECT
 		WHEN '0F72C46B-462D-E411-9415-005056804B43' THEN 'SIFE'
 		WHEN '1B72C46B-462D-E411-9415-005056804B43' THEN 'SIFL'
 		WHEN '89799F16-C4E8-4269-B409-5756998F193F' THEN 'CIFL'
-		ELSE cast(elcn_typeid as varchar(40))
 	END AS SALU_CODE,
 	elcn_formattedname,
-	elcn_locked, 
-	modifiedon 
+	ROW_NUMBER() OVER (PARTITION BY elcn_personid, elcn_typeid ORDER BY elcn_locked DESC, modifiedon DESC) RN
 INTO
 	#temp_aprsalu
 FROM
@@ -196,20 +166,9 @@ WHERE
 			    		'0F72C46B-462D-E411-9415-005056804B43',  
 	     				'1B72C46B-462D-E411-9415-005056804B43', 
 		    			'89799F16-C4E8-4269-B409-5756998F193F')  
-	AND (elcn_enddate &gt;= SYSDATETIME() 
-		OR elcn_enddate IS NULL)
+	AND elcn_enddate IS NULL
 ;
-CREATE NONCLUSTERED INDEX INDX_TMP_ID_SALU ON #temp_aprsalu (elcn_personId,salu_code);
-
-SELECT DISTINCT  
-	elcn_person personid,
-	datepart(YYYY,elcn_ContributionDate)givingyear,
-	datepart(YYYY,elcn_ContributionDate) -1 prevyear
-INTO
-	#temp_dontations
-FROM
-	elcn_contributiondonorBase 
-;
+CREATE NONCLUSTERED INDEX INDX_TMP_ID_SALU ON #temp_aprsalu (elcn_personId,salu_code,rn);
 
 SELECT elcn_personid, elcn_ratingtypeid, [Value], [Level], [Score]
 INTO #temp_ratings
@@ -221,6 +180,10 @@ FROM(
 		elcn_ratingBase.elcn_ratingvalue
 	FROM
 		elcn_ratingBase
+	WHERE
+		elcn_ratingtypeid in	('88C5BD4A-BF21-4635-B8BB-EBE956F2E5BD'
+								,'1BB294D5-53D7-4815-8963-096802773E6D'
+								,'3DE9ACBB-37E5-45AF-8902-2314FC2A9538')
 ) T PIVOT
 (	
 	MAX(elcn_ratingvalue)
@@ -231,18 +194,21 @@ FROM(
 CREATE NONCLUSTERED INDEX INDX_TMP_ID_RATINGTYPE ON #temp_ratings (elcn_personid, elcn_ratingtypeid);
 
 SELECT
-	elcn_PrimaryMemberPersonId, 
-	elcn_membershipprogramlevelbase.elcn_name ,
-	elcn_statusbase.elcn_name status,
-	elcn_membershipBase.elcn_MembershipNumber , --7701
-	CONVERT(DATE, elcn_membershipBase.elcn_ExpireDate) elcn_ExpireDate  -- null
-INTO #temp_membership
+	mb.elcn_PrimaryMemberPersonId
+	, mpl.elcn_name
+	, sb.elcn_name status_desc
+	, mb.elcn_MembershipNumber  --7701
+	, CONVERT(DATE, mb.elcn_ExpireDate) elcn_ExpireDate  -- null
+	, ROW_NUMBER() OVER (PARTITION BY mb.elcn_PrimaryMemberPersonId, mpl.elcn_name
+				ORDER BY COALESCE(mb.elcn_expiredate,'31-DEC-2999') DESC) rn
+INTO 
+	#temp_membership
 FROM
-	elcn_membershipBase
-	JOIN elcn_membershipprogramlevelbase
-		ON elcn_membershipBase.elcn_MembershipLevelId = elcn_membershipprogramlevelid
-	JOIN elcn_statusbase
-		ON elcn_membershipBase.elcn_MembershipStatusId  = elcn_statusid
+	elcn_membershipBase MB
+	JOIN elcn_membershipprogramlevelbase MPL
+		ON mb.elcn_MembershipLevelId = mpl.elcn_membershipprogramlevelId
+	JOIN elcn_statusbase SB
+		ON mb.elcn_MembershipStatusId  = sb.elcn_statusid
 ;
 CREATE NONCLUSTERED INDEX INDX_TMP_ID_MEMBERSHIP ON #temp_membership (elcn_primarymemberpersonid);
 
@@ -347,35 +313,64 @@ ORDER BY
 ;
 CREATE NONCLUSTERED INDEX INDX_TMP_ID ON #temp_activities (elcn_personid);
 
+SELECT
+	elcn_person
+	, [0] YTD
+	, [1] Year1
+	, [2] Year2
+	, [3] Year3
+	, [4] Year4
+INTO
+	#temp_recognitioncredit
+FROM
+	(
+	SELECT
+		cdb.elcn_person 
+		, cdb.elcn_RecognitionCredit
+		, datepart(YYYY,@p_EndDate) - datepart(YYYY,cdb.elcn_ContributionDate) contrib_year
+	FROM
+		elcn_contributiondonorBase cdb
+		JOIN elcn_contribution contrib 
+			ON cdb.elcn_contribution = contrib.elcn_contributionId
+	WHERE
+		cdb.elcn_person = '9D67DD91-B3CA-4AA7-BFCC-49BEE53AF420' --const.ContactId
+		AND contrib.statuscode = 1
+		AND contrib.elcn_contributionType IN (344220000, 
+											  344220001, 
+											  344220004,
+											  344220005)
+		AND cdb.elcn_ContributionDate &lt;= @p_EndDate
+
+	)T PIVOT
+	(	SUM(elcn_recognitioncredit)
+		FOR contrib_year
+		IN ([0], [1], [2], [3], [4])
+	)PVT;
+
+CREATE NONCLUSTERED INDEX INDX_TMP_ID ON #temp_recognitioncredit (elcn_person);
+
+SELECT DISTINCT  
+	elcn_person personid,
+	datepart(YYYY,elcn_ContributionDate)givingyear
+INTO
+	#temp_dontations
+FROM
+	elcn_contributiondonorBase
+WHERE 
+	elcn_ContributionDate &lt;= @p_EndDate
+;
+
 with w_get_consec_years AS ( 
 	select personid,
 		givingyear,
-		prevyear,
 		1 consecyears
 	from #temp_dontations
 	union all
 	select d.personid,
 	d.givingyear,
-	d.prevyear,
 	cte.consecyears +1 consecyears
 	from #temp_dontations d 
-		inner join w_get_consec_years cte
-			on cte.personid = d.personid
-			and d.givingyear -1 = cte.givingyear
-),
-	w_get_longest_consec_years AS ( 
-	select personid,
-		givingyear,
-		prevyear,
-		1 consecyears
-	from #temp_dontations
-	union all
-	select d.personid,
-	d.givingyear,
-	d.prevyear,
-	cte.consecyears +1 consecyears
-	from #temp_dontations d 
-		inner join w_get_consec_years cte
+		join w_get_consec_years cte
 			on cte.personid = d.personid
 			and d.givingyear -1 = cte.givingyear
 )
@@ -390,7 +385,6 @@ SELECT
 	, const.pref_first_name Preferred_First_Name
 	, const.Last_Name
 	, const.maiden_name
-
 	, COALESCE(cife_salu.elcn_formattedname,sife_salu.elcn_formattedname) PREFERRED_FULL_W_SALUTATION
 	, COALESCE(cifl_salu.elcn_formattedname,sifl_salu.elcn_formattedname) PREFERRED_SHORT_W_SALUTATION
 	, sife_salu.elcn_formattedname SIFE
@@ -538,10 +532,6 @@ SELECT
 	, ratings2.rating_score RATING_AMOUNT2
 	, ratings2.rating_value RATING2
 	, ratings2.rating_level RATING_LEVEL2
-	, null RATING_TYPE3
-	, null RATING_AMOUNT3
-	, null RATING3
-	, null RATING_LEVEL3
 
 	, (
 		SELECT
@@ -558,94 +548,31 @@ SELECT
 															344220004, 
 															344220005) 
 			and elcn_contributiondonorBase.elcn_ContributionDate BETWEEN @p_StartDate AND @p_EndDate
-		) Lifetime_Number_of_Gifts 
+		) Number_of_Gifts_For_Period
 
 	, const.Largest_Contribution_Amount 
 	, CONVERT(VARCHAR,const.elcn_LastContributionDate,101) Last_Contibution_Date 
 
-	, (
-		SELECT
-			SUM(elcn_RecognitionCredit)
-		FROM
-			elcn_contributiondonorBase
-			JOIN elcn_contribution  
-				ON elcn_contributiondonorBase.elcn_contribution = elcn_contribution.elcn_contributionId
-		WHERE
-			elcn_contributiondonorBase.elcn_person = const.ContactId
-			AND elcn_contribution.statuscode = 1
-			AND elcn_contribution.elcn_contributionType IN (344220000, 
-															344220001, 
-															344220004, 
-															344220005) 
-			and datepart(YYYY,elcn_contributiondonorBase.elcn_ContributionDate) = datepart(YYYY,sysdatetime())
-	) Gifts_YTD  
-
-	, (
-		SELECT
-			SUM(elcn_RecognitionCredit)
-		FROM
-			elcn_contributiondonorBase
-			JOIN elcn_contribution  
-				ON elcn_contributiondonorBase.elcn_contribution = elcn_contribution.elcn_contributionId
-		WHERE
-			elcn_contributiondonorBase.elcn_person = const.ContactId
-			AND elcn_contribution.statuscode = 1
-			AND elcn_contribution.elcn_contributionType IN (344220000,
-															344220001, 
-															344220004, 
-															344220005)
-			and datepart(YYYY,elcn_contributiondonorBase.elcn_ContributionDate) = datepart(YYYY,sysdatetime()) -1
-	) Gifts_Year2
-
-	, (
-		SELECT
-			SUM(elcn_RecognitionCredit)
-		FROM
-			elcn_contributiondonorBase
-			JOIN elcn_contribution  
-				ON elcn_contributiondonorBase.elcn_contribution = elcn_contribution.elcn_contributionId
-		WHERE
-			elcn_contributiondonorBase.elcn_person = const.ContactId
-			AND elcn_contribution.statuscode = 1
-			AND elcn_contribution.elcn_contributionType IN (344220000, 
-															344220001,
-															344220004, 
-															344220005) 
-			and datepart(YYYY,elcn_contributiondonorBase.elcn_ContributionDate) = datepart(YYYY,sysdatetime()) -2
-	) Gifts_Year3
-
-	, (
-		SELECT
-			SUM(elcn_RecognitionCredit)
-		FROM
-			elcn_contributiondonorBase
-			JOIN elcn_contribution  
-				ON elcn_contributiondonorBase.elcn_contribution = elcn_contribution.elcn_contributionId
-		WHERE
-			elcn_contributiondonorBase.elcn_person = const.ContactId
-			AND elcn_contribution.statuscode = 1
-			AND elcn_contribution.elcn_contributionType IN (344220000, 
-															344220001, 
-															344220004,
-															344220005)
-			and datepart(YYYY,elcn_contributiondonorBase.elcn_ContributionDate) = datepart(YYYY,sysdatetime()) -3
-	) Gifts_Year4
+	, recognitioncredit.YTD Gifts_YTD
+	, recognitioncredit.Year1 Gifts_Year2
+	, recognitioncredit.Year2 Gifts_Year3
+	, recognitioncredit.Year3 Gifts_Year4
 	
 	, longest_consec.longest_consec_years  LONGEST_CONS_YEARS_GIVEN
-	, consec.consecyears RECENT_CONSECUTIVE_YEARS
+	, consec.prev_consec_years RECENT_CONSECUTIVE_YEARS
 
 	, gen_membership.elcn_name MEMBERSHIP_NAME
-	, gen_membership.status MEMBERSHIP_STATUS
+	, gen_membership.status_desc MEMBERSHIP_STATUS
 	, gen_membership.elcn_membershipnumber MEMBERSHIP_NUMBER
 	, gen_membership.elcn_expiredate EXPIRATION_DATE
 
 	, won_membership.elcn_name WON_MEMBERSHIP_NAME
-	, won_membership.status WON_MEMBERSHIP_STATUS
+	, won_membership.status_desc WON_MEMBERSHIP_STATUS
 	, won_membership.elcn_membershipnumber WON_MEMBERSHIP_NUMBER
 	, won_membership.elcn_expiredate	WON_EXPIRATION_DATE
 
 	, fan_membership.elcn_name FAN_MEMBERSHIP_NAME
-	, fan_membership.status FAN_MEMBERSHIP_STATUS
+	, fan_membership.status_desc FAN_MEMBERSHIP_STATUS
 	, fan_membership.elcn_membershipnumber FAN_MEMBERSHIP_NUMBER
 	, fan_membership.elcn_expiredate FAN_EXPIRATION_DATE
 
@@ -671,124 +598,14 @@ SELECT
 		ELSE null
 	END Business_Phone_Preferred 
 
-	, (
-		SELECT
-			SUM(elcn_contributionBase.elcn_Amount)
-		FROM
-			elcn_contribution 
-			JOIN elcn_contributiondonorBase 
-				ON elcn_contribution.elcn_contributionId = elcn_contributiondonorBase.elcn_contribution
-			JOIN elcn_contributionBase 
-				ON elcn_contribution.elcn_PaymentforContribution = elcn_contributionBase.elcn_contributionId
-		WHERE
-			elcn_contributiondonorBase.elcn_person = const.ContactId
-			AND elcn_contributionBase.statuscode = 1
-			AND elcn_contribution.elcn_contributionType = 344220003 
-			AND elcn_contributiondonorBase.elcn_AssociationTypeId = '36FA0E30-6248-E411-941F-0050568068B8'
-	) Lifetime_Pledge_Payments 
-	
-	, (
-		SELECT
-			SUM(elcn_contributionBase.elcn_Amount)
-		FROM
-			elcn_contribution 
-			JOIN elcn_contributiondonorBase 
-				ON elcn_contribution.elcn_contributionId = elcn_contributiondonorBase.elcn_contribution
-			JOIN elcn_contributionBase 
-				ON elcn_contribution.elcn_PaymentforContribution = elcn_contributionBase.elcn_contributionId
-		WHERE
-			elcn_contributiondonorBase.elcn_person = const.ContactId
-			AND elcn_contributionBase.statuscode = 1
-			AND elcn_contribution.elcn_contributionType = 344220003 
-			AND elcn_contributiondonorBase.elcn_ContributionDate BETWEEN @p_StartDate AND @p_EndDate
-			AND elcn_contributiondonorBase.elcn_AssociationTypeId = '36FA0E30-6248-E411-941F-0050568068B8' 
-	) Total_Pledge_Payments 
-
+	, lifetime_pledge.pledge_total Lifetime_Pledge_Payments 
+	, period_pledge.pledge_total Total_Pledge_Payments 
 	, const.Lifetime_Giving
-
-	, ( 
-		SELECT
-			SUM(elcn_RecognitionCredit)
-		FROM
-			elcn_contributiondonorBase
-			JOIN elcn_contribution  
-				ON elcn_contributiondonorBase.elcn_contribution = elcn_contribution.elcn_contributionId
-		WHERE
-			elcn_contributiondonorBase.elcn_person = const.ContactId
-			AND elcn_contribution.statuscode = 1
-			AND elcn_contribution.elcn_contributionType IN (344220000, 
-															344220001, 
-															344220004,
-															344220005) 
-			and elcn_contributiondonorBase.elcn_ContributionDate BETWEEN @p_StartDate AND @p_EndDate
-	) Total_Giving
-
-	, (
-		SELECT
-			SUM(elcn_contribution.elcn_TotalPremiumFairMarketValue)
-		FROM
-			elcn_contributiondonorBase
-			JOIN elcn_contribution  
-				ON elcn_contributiondonorBase.elcn_contribution = elcn_contribution.elcn_contributionId
-		WHERE
-			elcn_contributiondonorbase.elcn_person = const.ContactId
-			AND elcn_contribution.statuscode = 1
-			AND elcn_contribution.elcn_contributionType IN (344220000, 
-															344220001, 
-															344220004, 
-															344220005) 
-	) Lifetime_Premiums
-
-	, (
-		SELECT
-			SUM(elcn_contribution.elcn_TotalPremiumFairMarketValue)
-		FROM
-			elcn_contributiondonorBase
-			JOIN elcn_contribution  
-				ON elcn_contributiondonorBase.elcn_contribution = elcn_contribution.elcn_contributionId
-		WHERE
-			elcn_contributiondonorbase.elcn_person = const.ContactId
-			AND elcn_contribution.statuscode = 1
-			AND elcn_contribution.elcn_contributionType IN (344220000, 
-															344220001, 
-															344220004, 
-															344220005) 
-			and elcn_contributiondonorBase.elcn_ContributionDate BETWEEN @p_StartDate AND @p_EndDate
-	) Total_Premiums
-
-	, (
-		SELECT
-			SUM(elcn_contribution.elcn_marketValue)
-		FROM
-			elcn_contributiondonorBase
-			JOIN elcn_contribution  
-				ON elcn_contributiondonorBase.elcn_contribution = elcn_contribution.elcn_contributionId
-		WHERE
-			elcn_contributiondonorBase.elcn_person = const.ContactId
-			AND elcn_contribution.statuscode = 1
-			AND elcn_contribution.elcn_contributionType IN (344220000, 
-															344220001, 
-															344220004, 
-															344220005) 
-			
-	) Lifetime_Fair_Market_Value
-
-	, (
-		SELECT
-			SUM(elcn_contribution.elcn_marketValue)
-		FROM
-			elcn_contributiondonorBase
-			JOIN elcn_contribution  
-				ON elcn_contributiondonorBase.elcn_contribution = elcn_contribution.elcn_contributionId
-		WHERE
-			elcn_contributiondonorBase.elcn_person = const.ContactId
-			AND elcn_contribution.statuscode = 1
-			AND elcn_contribution.elcn_contributionType IN (344220000, 
-															344220001, 
-															344220004, 
-															344220005) 
-			and elcn_contributiondonorBase.elcn_ContributionDate BETWEEN @p_StartDate AND @p_EndDate
-	) Total_Fair_Market_Value 
+	, period_totals.Total_Giving
+	, lifetime_totals.Lifetime_Premiums
+	, period_totals.Total_Premiums 
+	, lifetime_totals.Lifetime_Fair_Market_Value
+	, period_totals.Total_Fair_Market_Value 
 
 	, prt.elcn_type	Relationship
 	, spouse_p.fullname Relation_Name
@@ -821,65 +638,72 @@ SELECT
 FROM
 	#temp_const CONST
 
-	JOIN elcn_addressassociationBase AAB 
-		ON aab.elcn_personId = const.ContactId 
-		AND aab.elcn_Preferred =1
-	JOIN elcn_addresstypeBase ATB 
-		ON atb.elcn_addresstypeId = aab.elcn_AddressTypeId
-	JOIN #temp_addresses ADDRESSES
-		ON addresses.elcn_addressId = aab.elcn_AddressId
+	LEFT JOIN(
+		SELECT 
+			aab.*
+			,ROW_NUMBER() OVER (PARTITION BY elcn_personID 
+								ORDER BY CASE WHEN sb.elcn_name = 'Current' THEN 1 ELSE 2 END, 
+									aab.elcn_preferred DESC, 
+									COALESCE(aab.elcn_enddate,'12/31/2999') DESC) RN
+		FROM 
+			elcn_addressassociationBase AAB
+			JOIN elcn_statusbase SB
+				ON aab.elcn_AddressStatusId = elcn_statusid
+		) AAB 
+		ON const.ContactId = aab.elcn_personId
+		AND aab.rn = 1
+	JOIN #temp_addresses ADDRESSES -- state filtered
+		ON aab.elcn_AddressId = addresses.elcn_addressId  
+	LEFT JOIN elcn_addresstypeBase ATB 
+		ON  aab.elcn_AddressTypeId = atb.elcn_addresstypeId
 
 	LEFT JOIN(
 		SELECT
-			elcn_personid,
-			elcn_formattedname,
-			ROW_NUMBER() OVER (PARTITION BY elcn_personid ORDER BY elcn_locked DESC, modifiedon DESC) RN
+			elcn_personid
+			, elcn_formattedname
 		FROM
 			#temp_aprsalu salu
 		WHERE
 			salu.salu_code = 'CIFE'
+			AND salu.rn = 1
 		) CIFE_SALU 
 			ON const.contactid = cife_salu.elcn_personid
-			AND cife_salu.rn = 1
 	LEFT JOIN(
 		SELECT
-			elcn_personid,
-			elcn_formattedname,
-			ROW_NUMBER() OVER (PARTITION BY elcn_personid ORDER BY elcn_locked DESC, modifiedon DESC) RN
+			elcn_personid
+			, elcn_formattedname
 		FROM
 			#temp_aprsalu salu
 		WHERE
 			salu.salu_code = 'SIFE'
+			AND salu.rn = 1
 		) SIFE_SALU 
 			ON const.contactid = sife_salu.elcn_personid
-			AND sife_salu.rn = 1
 	LEFT JOIN(
 		SELECT 
-			elcn_personid,
-			elcn_formattedname,
-			ROW_NUMBER() OVER (PARTITION BY elcn_personid ORDER BY elcn_locked DESC, modifiedon DESC) RN
+			elcn_personid
+			, elcn_formattedname
 		FROM
 			#temp_aprsalu salu
 		WHERE
 			salu.salu_code = 'CIFL'
+			AND salu.rn = 1
 		) CIFL_SALU 
 			ON const.contactid = cifl_salu.elcn_personid
-			AND cifl_salu.rn = 1
 	LEFT JOIN(
 		SELECT 
-			elcn_personid,
-			elcn_formattedname,
-			ROW_NUMBER() OVER (PARTITION BY elcn_personid ORDER BY elcn_locked DESC, modifiedon DESC) RN
+			elcn_personid
+			, elcn_formattedname
 		FROM
 			#temp_aprsalu salu
 		WHERE
 			salu.salu_code = 'SIFL'
+			AND salu.rn = 1
 		) SIFL_SALU 
 			ON const.contactid = sifl_salu.elcn_personid
-			AND sifl_salu.rn = 1
 
 	LEFT JOIN elcn_constituentaffiliationBase cab 
-		ON cab.elcn_constituentaffiliationId = const.elcn_primaryconstituentaffiliationid
+		ON const.elcn_primaryconstituentaffiliationid = cab.elcn_constituentaffiliationId 
 	LEFT JOIN(
 		SELECT 
 			elcn_constituenttypeBase.*,
@@ -892,7 +716,7 @@ FROM
 				AND FilteredViewName = 'Filteredelcn_constituenttype'
 				AND attributeName = 'elcn_category'
 
-		) CTB ON ctb.elcn_constituenttypeID = cab.elcn_ConstituentTypeId
+		) CTB ON cab.elcn_ConstituentTypeId = ctb.elcn_constituenttypeID  
 
 	LEFT JOIN(
 		SELECT
@@ -901,7 +725,7 @@ FROM
 		FROM
 			#temp_ratings TR
 		WHERE
-			elcn_ratingtypeid =  '88C5BD4A-BF21-4635-B8BB-EBE956F2E5BD'
+			elcn_ratingtypeid =  '88C5BD4A-BF21-4635-B8BB-EBE956F2E5BD' 
 	) JFSG_EST_CAP ON const.ContactId = jfsg_est_cap.elcn_personid  
 
 	LEFT JOIN(
@@ -930,75 +754,79 @@ FROM
 			elcn_ratingtypeid = '3DE9ACBB-37E5-45AF-8902-2314FC2A9538'
 		)RATINGS2 ON const.contactid = ratings2.elcn_personid  
 
+	LEFT JOIN #temp_recognitioncredit recognitioncredit
+		ON const.ContactId = recognitioncredit.elcn_person
+
 	LEFT JOIN(
 		SELECT
 			personid,
-			MAX(consecyears) consecyears 
+			consecyears PREV_CONSEC_YEARS
 		FROM
-			w_get_consec_years
-		GROUP BY personid
+			(
+				SELECT 
+					personid
+					, givingyear
+					, consecyears
+					, ROW_NUMBER() OVER (PARTITION BY personid ORDER BY givingyear DESC, consecyears DESC) RN
+				FROM
+					w_get_consec_years
+			) T
+		WHERE 
+			rn = 1
 		)CONSEC ON const.contactid = consec.personid 
 	LEFT JOIN(
 		SELECT
 			personid,
 			MAX(consecyears) LONGEST_CONSEC_YEARS
 		FROM
-			w_get_longest_consec_years
+			w_get_consec_years
 		GROUP BY personid
 		)LONGEST_CONSEC on const.contactid = longest_consec.personid
 
 	LEFT JOIN(
 		SELECT
-			elcn_PrimaryMemberPersonId,
-			elcn_name,
-			status,
-			elcn_membershipnumber,
-			elcn_expiredate,
-			ROW_NUMBER() OVER (PARTITION BY elcn_PrimaryMemberPersonId
-				ORDER BY ISNULL(elcn_expiredate,'31-DEC-2999') DESC) rn
+			elcn_PrimaryMemberPersonId
+			, elcn_name
+			, status_desc
+			, elcn_membershipnumber
+			, elcn_expiredate
 		FROM
 			#temp_membership
 		WHERE
 			(	elcn_name not like 'FAN%'
 				AND elcn_name not like 'WON%'
-			) 		
+			) AND rn = 1
 	) GEN_MEMBERSHIP ON const.contactid = gen_membership.elcn_PrimaryMemberPersonId
-		AND gen_membership.rn = 1
 
 	LEFT JOIN(
 		SELECT
-			elcn_PrimaryMemberPersonId,
-			elcn_name,
-			status,
-			elcn_membershipnumber,
-			elcn_expiredate,
-			ROW_NUMBER() OVER (PARTITION BY elcn_PrimaryMemberPersonId
-				ORDER BY ISNULL(elcn_expiredate,'31-DEC-2999') DESC) rn
+			elcn_PrimaryMemberPersonId
+			, elcn_name
+			, status_desc
+			, elcn_membershipnumber
+			, elcn_expiredate
 		FROM
 			#temp_membership
 		WHERE
 			elcn_name like 'FAN%'
+			AND rn = 1
 	) FAN_MEMBERSHIP ON const.contactid = fan_membership.elcn_PrimaryMemberPersonId
-			AND fan_membership.rn = 1
 
 	LEFT JOIN(
 		SELECT
-			elcn_PrimaryMemberPersonId,
-			elcn_name,
-			status,
-			elcn_membershipnumber,
-			elcn_expiredate,
-			ROW_NUMBER() OVER (PARTITION BY elcn_PrimaryMemberPersonId
-				ORDER BY ISNULL(elcn_expiredate,'31-DEC-2999') DESC) rn
+			elcn_PrimaryMemberPersonId
+			, elcn_name
+			, status_desc
+			, elcn_membershipnumber
+			, elcn_expiredate
 		FROM
 			#temp_membership
 		WHERE
 			elcn_name like 'WON%'
 	) WON_MEMBERSHIP ON const.contactid = won_membership.elcn_PrimaryMemberPersonId
-			AND won_membership.rn = 1
 
 	LEFT JOIN elcn_emailaddressbase eab
-		ON eab.elcn_personid = const.contactid 
+		ON  const.contactid = eab.elcn_personid 
 		AND eab.elcn_preferred = 1
 
 	LEFT JOIN #temp_email_slot email_slot
@@ -1040,8 +868,82 @@ FROM
 			elcn_type = 'Business'
 		)BUSPHONE ON const.contactid = busphone.elcn_personid
 
+	LEFT JOIN(
+		SELECT
+		    elcn_person 
+			, SUM(elcn_contributionBase.elcn_Amount) pledge_total
+		FROM
+			elcn_contribution 
+			JOIN elcn_contributiondonorBase 
+				ON elcn_contribution.elcn_contributionId = elcn_contributiondonorBase.elcn_contribution
+			JOIN elcn_contributionBase 
+				ON elcn_contribution.elcn_PaymentforContribution = elcn_contributionBase.elcn_contributionId
+		WHERE
+			elcn_contributionBase.statuscode = 1
+			AND elcn_contribution.elcn_contributionType = 344220003 
+			AND elcn_contributiondonorBase.elcn_AssociationTypeId = '36FA0E30-6248-E411-941F-0050568068B8'
+		GROUP BY elcn_person 
+	) Lifetime_Pledge ON const.ContactId = Lifetime_Pledge.elcn_person
+	
+	LEFT JOIN(
+		SELECT
+			elcn_person
+			, SUM(elcn_contributionBase.elcn_Amount) pledge_total
+		FROM
+			elcn_contribution 
+			JOIN elcn_contributiondonorBase 
+				ON elcn_contribution.elcn_contributionId = elcn_contributiondonorBase.elcn_contribution
+			JOIN elcn_contributionBase 
+				ON elcn_contribution.elcn_PaymentforContribution = elcn_contributionBase.elcn_contributionId
+		WHERE
+			elcn_contributionBase.statuscode = 1
+			AND elcn_contribution.elcn_contributionType = 344220003 
+			AND elcn_contributiondonorBase.elcn_ContributionDate BETWEEN @p_StartDate AND @p_EndDate
+			AND elcn_contributiondonorBase.elcn_AssociationTypeId = '36FA0E30-6248-E411-941F-0050568068B8' 
+		GROUP BY elcn_person 
+	) period_pledge ON const.ContactId = period_pledge.elcn_person
+
+	LEFT JOIN(
+		SELECT DISTINCT 
+			elcn_person
+			, SUM(elcn_RecognitionCredit) Total_Giving
+			, SUM(elcn_TotalPremiumFairMarketValue)  Total_Premiums
+			, SUM(elcn_contribution.elcn_marketValue) Total_Fair_Market_Value
+		FROM
+			elcn_contributiondonorBase
+			JOIN elcn_contribution  
+				ON elcn_contributiondonorBase.elcn_contribution = elcn_contribution.elcn_contributionId
+		WHERE
+			elcn_contribution.statuscode = 1
+			AND elcn_contribution.elcn_contributionType IN (344220000, 
+															344220001, 
+															344220004,
+															344220005) 
+			and elcn_contributiondonorBase.elcn_ContributionDate BETWEEN @p_StartDate AND @p_EndDate
+		GROUP BY elcn_person 
+			)period_totals ON const.ContactId = period_totals.elcn_person
+	LEFT JOIN(
+		SELECT DISTINCT 
+			elcn_person
+			, SUM(elcn_contribution.elcn_TotalPremiumFairMarketValue)  Lifetime_Premiums
+			, SUM(elcn_contribution.elcn_marketValue)  Lifetime_Fair_Market_Value
+		FROM
+			elcn_contributiondonorBase
+			JOIN elcn_contribution  
+				ON elcn_contributiondonorBase.elcn_contribution = elcn_contribution.elcn_contributionId
+		WHERE
+		
+			elcn_contribution.statuscode = 1
+			AND elcn_contribution.elcn_contributionType IN (344220000, 
+															344220001, 
+															344220004, 
+															344220005)
+		GROUP BY 
+			elcn_person 
+		)lifetime_totals ON const.ContactID = lifetime_totals.elcn_person
+
 	LEFT JOIN elcn_personalrelationshipBase SPOUSE_LINK 
-		ON spouse_link.elcn_Person1Id = const.ContactId
+		ON const.ContactId = spouse_link.elcn_Person1Id
 			AND spouse_link.elcn_RelationshipType1ID IN ( '42295D4F-A6EE-E411-942F-005056804B43', 
 														'4F665855-A3B8-E911-80D8-0A253F89019C',
 														'62295D4F-A6EE-E411-942F-005056804B43',
@@ -1051,7 +953,7 @@ FROM
 	LEFT JOIN elcn_personalrelationshiptype prt 
 		ON spouse_link.elcn_RelationshipType1Id  = prt.elcn_personalrelationshiptypeid 
 	LEFT JOIN ContactBase spouse_p 
-		ON spouse_p.ContactId = spouse_link.elcn_Person2Id
+		ON spouse_link.elcn_Person2Id = spouse_p.ContactId
 
 	LEFT JOIN #temp_education edu_1 
 		ON edu_1.elcn_PersonId = const.ContactID 
@@ -1086,8 +988,7 @@ FROM
 			elcn_personid 
 	)ACTIVITIES ON const.contactid = activities.elcn_personid
 		
-WHERE	
-	
+WHERE		
 		EXISTS(
 			SELECT
 				ib.elcn_name 
@@ -1111,10 +1012,17 @@ WHERE
 			WHERE
 				edu.elcn_PersonId = const.contactid
 				AND edu.Degree_Year in (@p_academic_years)
+			UNION
+			SELECT
+				1 x
+			WHERE
+				@p_ignore_academic_years = 'Y'
 		)
 	)
---and const.Primary_Name like '%Mutzig%'
 
+--and const.Primary_Name like '%Mutzig%'
+--and id in ('N00149607','N00148562','N00005419')
+--and const.ContactId = '9D67DD91-B3CA-4AA7-BFCC-49BEE53AF420'
 ;</CommandText>
         <Timeout>300</Timeout>
         <rd:UseGenericDesigner>true</rd:UseGenericDesigner>
@@ -1284,24 +1192,8 @@ WHERE
           <DataField>RATING_LEVEL2</DataField>
           <rd:TypeName>System.String</rd:TypeName>
         </Field>
-        <Field Name="RATING_TYPE3">
-          <DataField>RATING_TYPE3</DataField>
-          <rd:TypeName>System.Int32</rd:TypeName>
-        </Field>
-        <Field Name="RATING_AMOUNT3">
-          <DataField>RATING_AMOUNT3</DataField>
-          <rd:TypeName>System.Int32</rd:TypeName>
-        </Field>
-        <Field Name="RATING3">
-          <DataField>RATING3</DataField>
-          <rd:TypeName>System.Int32</rd:TypeName>
-        </Field>
-        <Field Name="RATING_LEVEL3">
-          <DataField>RATING_LEVEL3</DataField>
-          <rd:TypeName>System.Int32</rd:TypeName>
-        </Field>
-        <Field Name="Lifetime_Number_of_Gifts">
-          <DataField>Lifetime_Number_of_Gifts</DataField>
+        <Field Name="Number_of_Gifts_For_Period">
+          <DataField>Number_of_Gifts_For_Period</DataField>
           <rd:TypeName>System.Int32</rd:TypeName>
         </Field>
         <Field Name="Largest_Contribution_Amount">
@@ -1606,12 +1498,6 @@ OPTION (MAXRECURSION 200);</CommandText>
           <Tablix Name="Tablix1">
             <TablixBody>
               <TablixColumns>
-                <TablixColumn>
-                  <Width>1.10417in</Width>
-                </TablixColumn>
-                <TablixColumn>
-                  <Width>1.26042in</Width>
-                </TablixColumn>
                 <TablixColumn>
                   <Width>1in</Width>
                 </TablixColumn>
@@ -1919,6 +1805,36 @@ OPTION (MAXRECURSION 200);</CommandText>
                   <TablixCells>
                     <TablixCell>
                       <CellContents>
+                        <Textbox Name="Textbox1">
+                          <CanGrow>true</CanGrow>
+                          <KeepTogether>true</KeepTogether>
+                          <Paragraphs>
+                            <Paragraph>
+                              <TextRuns>
+                                <TextRun>
+                                  <Value>Contact Id</Value>
+                                  <Style />
+                                </TextRun>
+                              </TextRuns>
+                              <Style />
+                            </Paragraph>
+                          </Paragraphs>
+                          <rd:DefaultName>Textbox1</rd:DefaultName>
+                          <Style>
+                            <Border>
+                              <Color>LightGrey</Color>
+                              <Style>Solid</Style>
+                            </Border>
+                            <PaddingLeft>2pt</PaddingLeft>
+                            <PaddingRight>2pt</PaddingRight>
+                            <PaddingTop>2pt</PaddingTop>
+                            <PaddingBottom>2pt</PaddingBottom>
+                          </Style>
+                        </Textbox>
+                      </CellContents>
+                    </TablixCell>
+                    <TablixCell>
+                      <CellContents>
                         <Textbox Name="Textbox3">
                           <CanGrow>true</CanGrow>
                           <KeepTogether>true</KeepTogether>
@@ -1926,7 +1842,7 @@ OPTION (MAXRECURSION 200);</CommandText>
                             <Paragraph>
                               <TextRuns>
                                 <TextRun>
-                                  <Value>DECEASED IND</Value>
+                                  <Value>Deceased Ind</Value>
                                   <Style />
                                 </TextRun>
                               </TextRuns>
@@ -1956,7 +1872,7 @@ OPTION (MAXRECURSION 200);</CommandText>
                             <Paragraph>
                               <TextRuns>
                                 <TextRun>
-                                  <Value>DATE OF BIRTH</Value>
+                                  <Value>Date of Birth</Value>
                                   <Style />
                                 </TextRun>
                               </TextRuns>
@@ -1986,7 +1902,7 @@ OPTION (MAXRECURSION 200);</CommandText>
                             <Paragraph>
                               <TextRuns>
                                 <TextRun>
-                                  <Value>ID</Value>
+                                  <Value>PIDM</Value>
                                   <Style>
                                     <FontFamily>Arial</FontFamily>
                                   </Style>
@@ -2018,7 +1934,7 @@ OPTION (MAXRECURSION 200);</CommandText>
                             <Paragraph>
                               <TextRuns>
                                 <TextRun>
-                                  <Value>Primary Name</Value>
+                                  <Value>Banner ID</Value>
                                   <Style>
                                     <FontFamily>Arial</FontFamily>
                                   </Style>
@@ -2050,7 +1966,7 @@ OPTION (MAXRECURSION 200);</CommandText>
                             <Paragraph>
                               <TextRuns>
                                 <TextRun>
-                                  <Value>Preferred First Name</Value>
+                                  <Value>Primary Name</Value>
                                   <Style>
                                     <FontFamily>Arial</FontFamily>
                                   </Style>
@@ -2075,7 +1991,39 @@ OPTION (MAXRECURSION 200);</CommandText>
                     </TablixCell>
                     <TablixCell>
                       <CellContents>
-                        <Textbox Name="Textbox13">
+                        <Textbox Name="Textbox14">
+                          <CanGrow>true</CanGrow>
+                          <KeepTogether>true</KeepTogether>
+                          <Paragraphs>
+                            <Paragraph>
+                              <TextRuns>
+                                <TextRun>
+                                  <Value>Preferred First Name</Value>
+                                  <Style>
+                                    <FontFamily>Arial</FontFamily>
+                                  </Style>
+                                </TextRun>
+                              </TextRuns>
+                              <Style />
+                            </Paragraph>
+                          </Paragraphs>
+                          <rd:DefaultName>Textbox14</rd:DefaultName>
+                          <Style>
+                            <Border>
+                              <Color>LightGrey</Color>
+                              <Style>Solid</Style>
+                            </Border>
+                            <PaddingLeft>2pt</PaddingLeft>
+                            <PaddingRight>2pt</PaddingRight>
+                            <PaddingTop>2pt</PaddingTop>
+                            <PaddingBottom>2pt</PaddingBottom>
+                          </Style>
+                        </Textbox>
+                      </CellContents>
+                    </TablixCell>
+                    <TablixCell>
+                      <CellContents>
+                        <Textbox Name="Textbox16">
                           <CanGrow>true</CanGrow>
                           <KeepTogether>true</KeepTogether>
                           <Paragraphs>
@@ -2083,6 +2031,294 @@ OPTION (MAXRECURSION 200);</CommandText>
                               <TextRuns>
                                 <TextRun>
                                   <Value>Last Name</Value>
+                                  <Style>
+                                    <FontFamily>Arial</FontFamily>
+                                  </Style>
+                                </TextRun>
+                              </TextRuns>
+                              <Style />
+                            </Paragraph>
+                          </Paragraphs>
+                          <rd:DefaultName>Textbox16</rd:DefaultName>
+                          <Style>
+                            <Border>
+                              <Color>LightGrey</Color>
+                              <Style>Solid</Style>
+                            </Border>
+                            <PaddingLeft>2pt</PaddingLeft>
+                            <PaddingRight>2pt</PaddingRight>
+                            <PaddingTop>2pt</PaddingTop>
+                            <PaddingBottom>2pt</PaddingBottom>
+                          </Style>
+                        </Textbox>
+                      </CellContents>
+                    </TablixCell>
+                    <TablixCell>
+                      <CellContents>
+                        <Textbox Name="Textbox18">
+                          <CanGrow>true</CanGrow>
+                          <KeepTogether>true</KeepTogether>
+                          <Paragraphs>
+                            <Paragraph>
+                              <TextRuns>
+                                <TextRun>
+                                  <Value>Maiden Name</Value>
+                                  <Style>
+                                    <FontFamily>Arial</FontFamily>
+                                  </Style>
+                                </TextRun>
+                              </TextRuns>
+                              <Style />
+                            </Paragraph>
+                          </Paragraphs>
+                          <rd:DefaultName>Textbox18</rd:DefaultName>
+                          <Style>
+                            <Border>
+                              <Color>LightGrey</Color>
+                              <Style>Solid</Style>
+                            </Border>
+                            <PaddingLeft>2pt</PaddingLeft>
+                            <PaddingRight>2pt</PaddingRight>
+                            <PaddingTop>2pt</PaddingTop>
+                            <PaddingBottom>2pt</PaddingBottom>
+                          </Style>
+                        </Textbox>
+                      </CellContents>
+                    </TablixCell>
+                    <TablixCell>
+                      <CellContents>
+                        <Textbox Name="Textbox20">
+                          <CanGrow>true</CanGrow>
+                          <KeepTogether>true</KeepTogether>
+                          <Paragraphs>
+                            <Paragraph>
+                              <TextRuns>
+                                <TextRun>
+                                  <Value>Preferred Full  Salutation</Value>
+                                  <Style>
+                                    <FontFamily>Arial</FontFamily>
+                                  </Style>
+                                </TextRun>
+                              </TextRuns>
+                              <Style />
+                            </Paragraph>
+                          </Paragraphs>
+                          <rd:DefaultName>Textbox20</rd:DefaultName>
+                          <Style>
+                            <Border>
+                              <Color>LightGrey</Color>
+                              <Style>Solid</Style>
+                            </Border>
+                            <PaddingLeft>2pt</PaddingLeft>
+                            <PaddingRight>2pt</PaddingRight>
+                            <PaddingTop>2pt</PaddingTop>
+                            <PaddingBottom>2pt</PaddingBottom>
+                          </Style>
+                        </Textbox>
+                      </CellContents>
+                    </TablixCell>
+                    <TablixCell>
+                      <CellContents>
+                        <Textbox Name="Textbox22">
+                          <CanGrow>true</CanGrow>
+                          <KeepTogether>true</KeepTogether>
+                          <Paragraphs>
+                            <Paragraph>
+                              <TextRuns>
+                                <TextRun>
+                                  <Value>Preferred Short Salutation</Value>
+                                  <Style>
+                                    <FontFamily>Arial</FontFamily>
+                                  </Style>
+                                </TextRun>
+                              </TextRuns>
+                              <Style />
+                            </Paragraph>
+                          </Paragraphs>
+                          <rd:DefaultName>Textbox22</rd:DefaultName>
+                          <Style>
+                            <Border>
+                              <Color>LightGrey</Color>
+                              <Style>Solid</Style>
+                            </Border>
+                            <PaddingLeft>2pt</PaddingLeft>
+                            <PaddingRight>2pt</PaddingRight>
+                            <PaddingTop>2pt</PaddingTop>
+                            <PaddingBottom>2pt</PaddingBottom>
+                          </Style>
+                        </Textbox>
+                      </CellContents>
+                    </TablixCell>
+                    <TablixCell>
+                      <CellContents>
+                        <Textbox Name="Textbox24">
+                          <CanGrow>true</CanGrow>
+                          <KeepTogether>true</KeepTogether>
+                          <Paragraphs>
+                            <Paragraph>
+                              <TextRuns>
+                                <TextRun>
+                                  <Value>SIFE</Value>
+                                  <Style>
+                                    <FontFamily>Arial</FontFamily>
+                                  </Style>
+                                </TextRun>
+                              </TextRuns>
+                              <Style />
+                            </Paragraph>
+                          </Paragraphs>
+                          <rd:DefaultName>Textbox24</rd:DefaultName>
+                          <Style>
+                            <Border>
+                              <Color>LightGrey</Color>
+                              <Style>Solid</Style>
+                            </Border>
+                            <PaddingLeft>2pt</PaddingLeft>
+                            <PaddingRight>2pt</PaddingRight>
+                            <PaddingTop>2pt</PaddingTop>
+                            <PaddingBottom>2pt</PaddingBottom>
+                          </Style>
+                        </Textbox>
+                      </CellContents>
+                    </TablixCell>
+                    <TablixCell>
+                      <CellContents>
+                        <Textbox Name="Textbox26">
+                          <CanGrow>true</CanGrow>
+                          <KeepTogether>true</KeepTogether>
+                          <Paragraphs>
+                            <Paragraph>
+                              <TextRuns>
+                                <TextRun>
+                                  <Value>SIFL</Value>
+                                  <Style>
+                                    <FontFamily>Arial</FontFamily>
+                                  </Style>
+                                </TextRun>
+                              </TextRuns>
+                              <Style />
+                            </Paragraph>
+                          </Paragraphs>
+                          <rd:DefaultName>Textbox26</rd:DefaultName>
+                          <Style>
+                            <Border>
+                              <Color>LightGrey</Color>
+                              <Style>Solid</Style>
+                            </Border>
+                            <PaddingLeft>2pt</PaddingLeft>
+                            <PaddingRight>2pt</PaddingRight>
+                            <PaddingTop>2pt</PaddingTop>
+                            <PaddingBottom>2pt</PaddingBottom>
+                          </Style>
+                        </Textbox>
+                      </CellContents>
+                    </TablixCell>
+                    <TablixCell>
+                      <CellContents>
+                        <Textbox Name="Textbox2">
+                          <CanGrow>true</CanGrow>
+                          <KeepTogether>true</KeepTogether>
+                          <Paragraphs>
+                            <Paragraph>
+                              <TextRuns>
+                                <TextRun>
+                                  <Value>Primary Constituent Type</Value>
+                                  <Style>
+                                    <FontFamily>Arial</FontFamily>
+                                  </Style>
+                                </TextRun>
+                              </TextRuns>
+                              <Style />
+                            </Paragraph>
+                          </Paragraphs>
+                          <rd:DefaultName>Textbox2</rd:DefaultName>
+                          <Style>
+                            <Border>
+                              <Color>LightGrey</Color>
+                              <Style>Solid</Style>
+                            </Border>
+                            <PaddingLeft>2pt</PaddingLeft>
+                            <PaddingRight>2pt</PaddingRight>
+                            <PaddingTop>2pt</PaddingTop>
+                            <PaddingBottom>2pt</PaddingBottom>
+                          </Style>
+                        </Textbox>
+                      </CellContents>
+                    </TablixCell>
+                    <TablixCell>
+                      <CellContents>
+                        <Textbox Name="Textbox6">
+                          <CanGrow>true</CanGrow>
+                          <KeepTogether>true</KeepTogether>
+                          <Paragraphs>
+                            <Paragraph>
+                              <TextRuns>
+                                <TextRun>
+                                  <Value>Primary Constituent Desc</Value>
+                                  <Style>
+                                    <FontFamily>Arial</FontFamily>
+                                  </Style>
+                                </TextRun>
+                              </TextRuns>
+                              <Style />
+                            </Paragraph>
+                          </Paragraphs>
+                          <rd:DefaultName>Textbox6</rd:DefaultName>
+                          <Style>
+                            <Border>
+                              <Color>LightGrey</Color>
+                              <Style>Solid</Style>
+                            </Border>
+                            <PaddingLeft>2pt</PaddingLeft>
+                            <PaddingRight>2pt</PaddingRight>
+                            <PaddingTop>2pt</PaddingTop>
+                            <PaddingBottom>2pt</PaddingBottom>
+                          </Style>
+                        </Textbox>
+                      </CellContents>
+                    </TablixCell>
+                    <TablixCell>
+                      <CellContents>
+                        <Textbox Name="Textbox10">
+                          <CanGrow>true</CanGrow>
+                          <KeepTogether>true</KeepTogether>
+                          <Paragraphs>
+                            <Paragraph>
+                              <TextRuns>
+                                <TextRun>
+                                  <Value>Street Line1</Value>
+                                  <Style>
+                                    <FontFamily>Arial</FontFamily>
+                                  </Style>
+                                </TextRun>
+                              </TextRuns>
+                              <Style />
+                            </Paragraph>
+                          </Paragraphs>
+                          <rd:DefaultName>Textbox10</rd:DefaultName>
+                          <Style>
+                            <Border>
+                              <Color>LightGrey</Color>
+                              <Style>Solid</Style>
+                            </Border>
+                            <PaddingLeft>2pt</PaddingLeft>
+                            <PaddingRight>2pt</PaddingRight>
+                            <PaddingTop>2pt</PaddingTop>
+                            <PaddingBottom>2pt</PaddingBottom>
+                          </Style>
+                        </Textbox>
+                      </CellContents>
+                    </TablixCell>
+                    <TablixCell>
+                      <CellContents>
+                        <Textbox Name="Textbox13">
+                          <CanGrow>true</CanGrow>
+                          <KeepTogether>true</KeepTogether>
+                          <Paragraphs>
+                            <Paragraph>
+                              <TextRuns>
+                                <TextRun>
+                                  <Value>Street Line2</Value>
                                   <Style>
                                     <FontFamily>Arial</FontFamily>
                                   </Style>
@@ -2107,38 +2343,6 @@ OPTION (MAXRECURSION 200);</CommandText>
                     </TablixCell>
                     <TablixCell>
                       <CellContents>
-                        <Textbox Name="Textbox15">
-                          <CanGrow>true</CanGrow>
-                          <KeepTogether>true</KeepTogether>
-                          <Paragraphs>
-                            <Paragraph>
-                              <TextRuns>
-                                <TextRun>
-                                  <Value>MAIDEN NAME</Value>
-                                  <Style>
-                                    <FontFamily>Arial</FontFamily>
-                                  </Style>
-                                </TextRun>
-                              </TextRuns>
-                              <Style />
-                            </Paragraph>
-                          </Paragraphs>
-                          <rd:DefaultName>Textbox15</rd:DefaultName>
-                          <Style>
-                            <Border>
-                              <Color>LightGrey</Color>
-                              <Style>Solid</Style>
-                            </Border>
-                            <PaddingLeft>2pt</PaddingLeft>
-                            <PaddingRight>2pt</PaddingRight>
-                            <PaddingTop>2pt</PaddingTop>
-                            <PaddingBottom>2pt</PaddingBottom>
-                          </Style>
-                        </Textbox>
-                      </CellContents>
-                    </TablixCell>
-                    <TablixCell>
-                      <CellContents>
                         <Textbox Name="Textbox17">
                           <CanGrow>true</CanGrow>
                           <KeepTogether>true</KeepTogether>
@@ -2146,7 +2350,7 @@ OPTION (MAXRECURSION 200);</CommandText>
                             <Paragraph>
                               <TextRuns>
                                 <TextRun>
-                                  <Value>PREFERRED FULL W SALUTATION</Value>
+                                  <Value>City</Value>
                                   <Style>
                                     <FontFamily>Arial</FontFamily>
                                   </Style>
@@ -2171,38 +2375,6 @@ OPTION (MAXRECURSION 200);</CommandText>
                     </TablixCell>
                     <TablixCell>
                       <CellContents>
-                        <Textbox Name="Textbox19">
-                          <CanGrow>true</CanGrow>
-                          <KeepTogether>true</KeepTogether>
-                          <Paragraphs>
-                            <Paragraph>
-                              <TextRuns>
-                                <TextRun>
-                                  <Value>PREFERRED SHORT W SALUTATION</Value>
-                                  <Style>
-                                    <FontFamily>Arial</FontFamily>
-                                  </Style>
-                                </TextRun>
-                              </TextRuns>
-                              <Style />
-                            </Paragraph>
-                          </Paragraphs>
-                          <rd:DefaultName>Textbox19</rd:DefaultName>
-                          <Style>
-                            <Border>
-                              <Color>LightGrey</Color>
-                              <Style>Solid</Style>
-                            </Border>
-                            <PaddingLeft>2pt</PaddingLeft>
-                            <PaddingRight>2pt</PaddingRight>
-                            <PaddingTop>2pt</PaddingTop>
-                            <PaddingBottom>2pt</PaddingBottom>
-                          </Style>
-                        </Textbox>
-                      </CellContents>
-                    </TablixCell>
-                    <TablixCell>
-                      <CellContents>
                         <Textbox Name="Textbox21">
                           <CanGrow>true</CanGrow>
                           <KeepTogether>true</KeepTogether>
@@ -2210,7 +2382,7 @@ OPTION (MAXRECURSION 200);</CommandText>
                             <Paragraph>
                               <TextRuns>
                                 <TextRun>
-                                  <Value>SIFE</Value>
+                                  <Value>State Province</Value>
                                   <Style>
                                     <FontFamily>Arial</FontFamily>
                                   </Style>
@@ -2235,38 +2407,6 @@ OPTION (MAXRECURSION 200);</CommandText>
                     </TablixCell>
                     <TablixCell>
                       <CellContents>
-                        <Textbox Name="Textbox23">
-                          <CanGrow>true</CanGrow>
-                          <KeepTogether>true</KeepTogether>
-                          <Paragraphs>
-                            <Paragraph>
-                              <TextRuns>
-                                <TextRun>
-                                  <Value>SIFL</Value>
-                                  <Style>
-                                    <FontFamily>Arial</FontFamily>
-                                  </Style>
-                                </TextRun>
-                              </TextRuns>
-                              <Style />
-                            </Paragraph>
-                          </Paragraphs>
-                          <rd:DefaultName>Textbox23</rd:DefaultName>
-                          <Style>
-                            <Border>
-                              <Color>LightGrey</Color>
-                              <Style>Solid</Style>
-                            </Border>
-                            <PaddingLeft>2pt</PaddingLeft>
-                            <PaddingRight>2pt</PaddingRight>
-                            <PaddingTop>2pt</PaddingTop>
-                            <PaddingBottom>2pt</PaddingBottom>
-                          </Style>
-                        </Textbox>
-                      </CellContents>
-                    </TablixCell>
-                    <TablixCell>
-                      <CellContents>
                         <Textbox Name="Textbox25">
                           <CanGrow>true</CanGrow>
                           <KeepTogether>true</KeepTogether>
@@ -2274,7 +2414,7 @@ OPTION (MAXRECURSION 200);</CommandText>
                             <Paragraph>
                               <TextRuns>
                                 <TextRun>
-                                  <Value>Primary Constituent Type</Value>
+                                  <Value>Postal Code</Value>
                                   <Style>
                                     <FontFamily>Arial</FontFamily>
                                   </Style>
@@ -2299,199 +2439,7 @@ OPTION (MAXRECURSION 200);</CommandText>
                     </TablixCell>
                     <TablixCell>
                       <CellContents>
-                        <Textbox Name="Textbox27">
-                          <CanGrow>true</CanGrow>
-                          <KeepTogether>true</KeepTogether>
-                          <Paragraphs>
-                            <Paragraph>
-                              <TextRuns>
-                                <TextRun>
-                                  <Value>Primary Constituent Desc</Value>
-                                  <Style>
-                                    <FontFamily>Arial</FontFamily>
-                                  </Style>
-                                </TextRun>
-                              </TextRuns>
-                              <Style />
-                            </Paragraph>
-                          </Paragraphs>
-                          <rd:DefaultName>Textbox27</rd:DefaultName>
-                          <Style>
-                            <Border>
-                              <Color>LightGrey</Color>
-                              <Style>Solid</Style>
-                            </Border>
-                            <PaddingLeft>2pt</PaddingLeft>
-                            <PaddingRight>2pt</PaddingRight>
-                            <PaddingTop>2pt</PaddingTop>
-                            <PaddingBottom>2pt</PaddingBottom>
-                          </Style>
-                        </Textbox>
-                      </CellContents>
-                    </TablixCell>
-                    <TablixCell>
-                      <CellContents>
-                        <Textbox Name="Textbox29">
-                          <CanGrow>true</CanGrow>
-                          <KeepTogether>true</KeepTogether>
-                          <Paragraphs>
-                            <Paragraph>
-                              <TextRuns>
-                                <TextRun>
-                                  <Value>Street Line1</Value>
-                                  <Style>
-                                    <FontFamily>Arial</FontFamily>
-                                  </Style>
-                                </TextRun>
-                              </TextRuns>
-                              <Style />
-                            </Paragraph>
-                          </Paragraphs>
-                          <rd:DefaultName>Textbox29</rd:DefaultName>
-                          <Style>
-                            <Border>
-                              <Color>LightGrey</Color>
-                              <Style>Solid</Style>
-                            </Border>
-                            <PaddingLeft>2pt</PaddingLeft>
-                            <PaddingRight>2pt</PaddingRight>
-                            <PaddingTop>2pt</PaddingTop>
-                            <PaddingBottom>2pt</PaddingBottom>
-                          </Style>
-                        </Textbox>
-                      </CellContents>
-                    </TablixCell>
-                    <TablixCell>
-                      <CellContents>
-                        <Textbox Name="Textbox31">
-                          <CanGrow>true</CanGrow>
-                          <KeepTogether>true</KeepTogether>
-                          <Paragraphs>
-                            <Paragraph>
-                              <TextRuns>
-                                <TextRun>
-                                  <Value>Street Line2</Value>
-                                  <Style>
-                                    <FontFamily>Arial</FontFamily>
-                                  </Style>
-                                </TextRun>
-                              </TextRuns>
-                              <Style />
-                            </Paragraph>
-                          </Paragraphs>
-                          <rd:DefaultName>Textbox31</rd:DefaultName>
-                          <Style>
-                            <Border>
-                              <Color>LightGrey</Color>
-                              <Style>Solid</Style>
-                            </Border>
-                            <PaddingLeft>2pt</PaddingLeft>
-                            <PaddingRight>2pt</PaddingRight>
-                            <PaddingTop>2pt</PaddingTop>
-                            <PaddingBottom>2pt</PaddingBottom>
-                          </Style>
-                        </Textbox>
-                      </CellContents>
-                    </TablixCell>
-                    <TablixCell>
-                      <CellContents>
-                        <Textbox Name="Textbox33">
-                          <CanGrow>true</CanGrow>
-                          <KeepTogether>true</KeepTogether>
-                          <Paragraphs>
-                            <Paragraph>
-                              <TextRuns>
-                                <TextRun>
-                                  <Value>City</Value>
-                                  <Style>
-                                    <FontFamily>Arial</FontFamily>
-                                  </Style>
-                                </TextRun>
-                              </TextRuns>
-                              <Style />
-                            </Paragraph>
-                          </Paragraphs>
-                          <rd:DefaultName>Textbox33</rd:DefaultName>
-                          <Style>
-                            <Border>
-                              <Color>LightGrey</Color>
-                              <Style>Solid</Style>
-                            </Border>
-                            <PaddingLeft>2pt</PaddingLeft>
-                            <PaddingRight>2pt</PaddingRight>
-                            <PaddingTop>2pt</PaddingTop>
-                            <PaddingBottom>2pt</PaddingBottom>
-                          </Style>
-                        </Textbox>
-                      </CellContents>
-                    </TablixCell>
-                    <TablixCell>
-                      <CellContents>
-                        <Textbox Name="Textbox35">
-                          <CanGrow>true</CanGrow>
-                          <KeepTogether>true</KeepTogether>
-                          <Paragraphs>
-                            <Paragraph>
-                              <TextRuns>
-                                <TextRun>
-                                  <Value>State Province</Value>
-                                  <Style>
-                                    <FontFamily>Arial</FontFamily>
-                                  </Style>
-                                </TextRun>
-                              </TextRuns>
-                              <Style />
-                            </Paragraph>
-                          </Paragraphs>
-                          <rd:DefaultName>Textbox35</rd:DefaultName>
-                          <Style>
-                            <Border>
-                              <Color>LightGrey</Color>
-                              <Style>Solid</Style>
-                            </Border>
-                            <PaddingLeft>2pt</PaddingLeft>
-                            <PaddingRight>2pt</PaddingRight>
-                            <PaddingTop>2pt</PaddingTop>
-                            <PaddingBottom>2pt</PaddingBottom>
-                          </Style>
-                        </Textbox>
-                      </CellContents>
-                    </TablixCell>
-                    <TablixCell>
-                      <CellContents>
-                        <Textbox Name="Textbox37">
-                          <CanGrow>true</CanGrow>
-                          <KeepTogether>true</KeepTogether>
-                          <Paragraphs>
-                            <Paragraph>
-                              <TextRuns>
-                                <TextRun>
-                                  <Value>Postal Code</Value>
-                                  <Style>
-                                    <FontFamily>Arial</FontFamily>
-                                  </Style>
-                                </TextRun>
-                              </TextRuns>
-                              <Style />
-                            </Paragraph>
-                          </Paragraphs>
-                          <rd:DefaultName>Textbox37</rd:DefaultName>
-                          <Style>
-                            <Border>
-                              <Color>LightGrey</Color>
-                              <Style>Solid</Style>
-                            </Border>
-                            <PaddingLeft>2pt</PaddingLeft>
-                            <PaddingRight>2pt</PaddingRight>
-                            <PaddingTop>2pt</PaddingTop>
-                            <PaddingBottom>2pt</PaddingBottom>
-                          </Style>
-                        </Textbox>
-                      </CellContents>
-                    </TablixCell>
-                    <TablixCell>
-                      <CellContents>
-                        <Textbox Name="Textbox39">
+                        <Textbox Name="Textbox28">
                           <CanGrow>true</CanGrow>
                           <KeepTogether>true</KeepTogether>
                           <Paragraphs>
@@ -2507,7 +2455,7 @@ OPTION (MAXRECURSION 200);</CommandText>
                               <Style />
                             </Paragraph>
                           </Paragraphs>
-                          <rd:DefaultName>Textbox39</rd:DefaultName>
+                          <rd:DefaultName>Textbox28</rd:DefaultName>
                           <Style>
                             <Border>
                               <Color>LightGrey</Color>
@@ -2523,7 +2471,7 @@ OPTION (MAXRECURSION 200);</CommandText>
                     </TablixCell>
                     <TablixCell>
                       <CellContents>
-                        <Textbox Name="Textbox41">
+                        <Textbox Name="Textbox30">
                           <CanGrow>true</CanGrow>
                           <KeepTogether>true</KeepTogether>
                           <Paragraphs>
@@ -2539,7 +2487,7 @@ OPTION (MAXRECURSION 200);</CommandText>
                               <Style />
                             </Paragraph>
                           </Paragraphs>
-                          <rd:DefaultName>Textbox41</rd:DefaultName>
+                          <rd:DefaultName>Textbox30</rd:DefaultName>
                           <Style>
                             <Border>
                               <Color>LightGrey</Color>
@@ -2555,7 +2503,7 @@ OPTION (MAXRECURSION 200);</CommandText>
                     </TablixCell>
                     <TablixCell>
                       <CellContents>
-                        <Textbox Name="Textbox43">
+                        <Textbox Name="Textbox32">
                           <CanGrow>true</CanGrow>
                           <KeepTogether>true</KeepTogether>
                           <Paragraphs>
@@ -2571,7 +2519,7 @@ OPTION (MAXRECURSION 200);</CommandText>
                               <Style />
                             </Paragraph>
                           </Paragraphs>
-                          <rd:DefaultName>Textbox43</rd:DefaultName>
+                          <rd:DefaultName>Textbox32</rd:DefaultName>
                           <Style>
                             <Border>
                               <Color>LightGrey</Color>
@@ -2587,7 +2535,7 @@ OPTION (MAXRECURSION 200);</CommandText>
                     </TablixCell>
                     <TablixCell>
                       <CellContents>
-                        <Textbox Name="Textbox45">
+                        <Textbox Name="Textbox34">
                           <CanGrow>true</CanGrow>
                           <KeepTogether>true</KeepTogether>
                           <Paragraphs>
@@ -2603,7 +2551,7 @@ OPTION (MAXRECURSION 200);</CommandText>
                               <Style />
                             </Paragraph>
                           </Paragraphs>
-                          <rd:DefaultName>Textbox45</rd:DefaultName>
+                          <rd:DefaultName>Textbox34</rd:DefaultName>
                           <Style>
                             <Border>
                               <Color>LightGrey</Color>
@@ -2619,7 +2567,7 @@ OPTION (MAXRECURSION 200);</CommandText>
                     </TablixCell>
                     <TablixCell>
                       <CellContents>
-                        <Textbox Name="Textbox47">
+                        <Textbox Name="Textbox36">
                           <CanGrow>true</CanGrow>
                           <KeepTogether>true</KeepTogether>
                           <Paragraphs>
@@ -2635,7 +2583,7 @@ OPTION (MAXRECURSION 200);</CommandText>
                               <Style />
                             </Paragraph>
                           </Paragraphs>
-                          <rd:DefaultName>Textbox47</rd:DefaultName>
+                          <rd:DefaultName>Textbox36</rd:DefaultName>
                           <Style>
                             <Border>
                               <Color>LightGrey</Color>
@@ -2651,7 +2599,7 @@ OPTION (MAXRECURSION 200);</CommandText>
                     </TablixCell>
                     <TablixCell>
                       <CellContents>
-                        <Textbox Name="Textbox49">
+                        <Textbox Name="Textbox38">
                           <CanGrow>true</CanGrow>
                           <KeepTogether>true</KeepTogether>
                           <Paragraphs>
@@ -2667,7 +2615,7 @@ OPTION (MAXRECURSION 200);</CommandText>
                               <Style />
                             </Paragraph>
                           </Paragraphs>
-                          <rd:DefaultName>Textbox49</rd:DefaultName>
+                          <rd:DefaultName>Textbox38</rd:DefaultName>
                           <Style>
                             <Border>
                               <Color>LightGrey</Color>
@@ -2683,7 +2631,7 @@ OPTION (MAXRECURSION 200);</CommandText>
                     </TablixCell>
                     <TablixCell>
                       <CellContents>
-                        <Textbox Name="Textbox51">
+                        <Textbox Name="Textbox40">
                           <CanGrow>true</CanGrow>
                           <KeepTogether>true</KeepTogether>
                           <Paragraphs>
@@ -2699,7 +2647,7 @@ OPTION (MAXRECURSION 200);</CommandText>
                               <Style />
                             </Paragraph>
                           </Paragraphs>
-                          <rd:DefaultName>Textbox51</rd:DefaultName>
+                          <rd:DefaultName>Textbox40</rd:DefaultName>
                           <Style>
                             <Border>
                               <Color>LightGrey</Color>
@@ -2715,7 +2663,7 @@ OPTION (MAXRECURSION 200);</CommandText>
                     </TablixCell>
                     <TablixCell>
                       <CellContents>
-                        <Textbox Name="Textbox53">
+                        <Textbox Name="Textbox42">
                           <CanGrow>true</CanGrow>
                           <KeepTogether>true</KeepTogether>
                           <Paragraphs>
@@ -2731,7 +2679,7 @@ OPTION (MAXRECURSION 200);</CommandText>
                               <Style />
                             </Paragraph>
                           </Paragraphs>
-                          <rd:DefaultName>Textbox53</rd:DefaultName>
+                          <rd:DefaultName>Textbox42</rd:DefaultName>
                           <Style>
                             <Border>
                               <Color>LightGrey</Color>
@@ -2747,7 +2695,7 @@ OPTION (MAXRECURSION 200);</CommandText>
                     </TablixCell>
                     <TablixCell>
                       <CellContents>
-                        <Textbox Name="Textbox55">
+                        <Textbox Name="Textbox44">
                           <CanGrow>true</CanGrow>
                           <KeepTogether>true</KeepTogether>
                           <Paragraphs>
@@ -2763,7 +2711,7 @@ OPTION (MAXRECURSION 200);</CommandText>
                               <Style />
                             </Paragraph>
                           </Paragraphs>
-                          <rd:DefaultName>Textbox55</rd:DefaultName>
+                          <rd:DefaultName>Textbox44</rd:DefaultName>
                           <Style>
                             <Border>
                               <Color>LightGrey</Color>
@@ -2779,7 +2727,7 @@ OPTION (MAXRECURSION 200);</CommandText>
                     </TablixCell>
                     <TablixCell>
                       <CellContents>
-                        <Textbox Name="Textbox57">
+                        <Textbox Name="Textbox46">
                           <CanGrow>true</CanGrow>
                           <KeepTogether>true</KeepTogether>
                           <Paragraphs>
@@ -2795,7 +2743,7 @@ OPTION (MAXRECURSION 200);</CommandText>
                               <Style />
                             </Paragraph>
                           </Paragraphs>
-                          <rd:DefaultName>Textbox57</rd:DefaultName>
+                          <rd:DefaultName>Textbox46</rd:DefaultName>
                           <Style>
                             <Border>
                               <Color>LightGrey</Color>
@@ -2811,7 +2759,7 @@ OPTION (MAXRECURSION 200);</CommandText>
                     </TablixCell>
                     <TablixCell>
                       <CellContents>
-                        <Textbox Name="Textbox59">
+                        <Textbox Name="Textbox48">
                           <CanGrow>true</CanGrow>
                           <KeepTogether>true</KeepTogether>
                           <Paragraphs>
@@ -2827,7 +2775,7 @@ OPTION (MAXRECURSION 200);</CommandText>
                               <Style />
                             </Paragraph>
                           </Paragraphs>
-                          <rd:DefaultName>Textbox59</rd:DefaultName>
+                          <rd:DefaultName>Textbox48</rd:DefaultName>
                           <Style>
                             <Border>
                               <Color>LightGrey</Color>
@@ -2843,7 +2791,7 @@ OPTION (MAXRECURSION 200);</CommandText>
                     </TablixCell>
                     <TablixCell>
                       <CellContents>
-                        <Textbox Name="Textbox61">
+                        <Textbox Name="Textbox50">
                           <CanGrow>true</CanGrow>
                           <KeepTogether>true</KeepTogether>
                           <Paragraphs>
@@ -2859,7 +2807,7 @@ OPTION (MAXRECURSION 200);</CommandText>
                               <Style />
                             </Paragraph>
                           </Paragraphs>
-                          <rd:DefaultName>Textbox61</rd:DefaultName>
+                          <rd:DefaultName>Textbox50</rd:DefaultName>
                           <Style>
                             <Border>
                               <Color>LightGrey</Color>
@@ -2875,14 +2823,14 @@ OPTION (MAXRECURSION 200);</CommandText>
                     </TablixCell>
                     <TablixCell>
                       <CellContents>
-                        <Textbox Name="Textbox63">
+                        <Textbox Name="Textbox52">
                           <CanGrow>true</CanGrow>
                           <KeepTogether>true</KeepTogether>
                           <Paragraphs>
                             <Paragraph>
                               <TextRuns>
                                 <TextRun>
-                                  <Value>RATING TYPE1</Value>
+                                  <Value>JFSG Estimated Capacity</Value>
                                   <Style>
                                     <FontFamily>Arial</FontFamily>
                                   </Style>
@@ -2891,7 +2839,7 @@ OPTION (MAXRECURSION 200);</CommandText>
                               <Style />
                             </Paragraph>
                           </Paragraphs>
-                          <rd:DefaultName>Textbox63</rd:DefaultName>
+                          <rd:DefaultName>Textbox52</rd:DefaultName>
                           <Style>
                             <Border>
                               <Color>LightGrey</Color>
@@ -2907,14 +2855,14 @@ OPTION (MAXRECURSION 200);</CommandText>
                     </TablixCell>
                     <TablixCell>
                       <CellContents>
-                        <Textbox Name="Textbox65">
+                        <Textbox Name="Textbox54">
                           <CanGrow>true</CanGrow>
                           <KeepTogether>true</KeepTogether>
                           <Paragraphs>
                             <Paragraph>
                               <TextRuns>
                                 <TextRun>
-                                  <Value>RATING AMOUNT1</Value>
+                                  <Value>Rating1 Type</Value>
                                   <Style>
                                     <FontFamily>Arial</FontFamily>
                                   </Style>
@@ -2923,7 +2871,7 @@ OPTION (MAXRECURSION 200);</CommandText>
                               <Style />
                             </Paragraph>
                           </Paragraphs>
-                          <rd:DefaultName>Textbox65</rd:DefaultName>
+                          <rd:DefaultName>Textbox54</rd:DefaultName>
                           <Style>
                             <Border>
                               <Color>LightGrey</Color>
@@ -2939,14 +2887,14 @@ OPTION (MAXRECURSION 200);</CommandText>
                     </TablixCell>
                     <TablixCell>
                       <CellContents>
-                        <Textbox Name="Textbox67">
+                        <Textbox Name="Textbox56">
                           <CanGrow>true</CanGrow>
                           <KeepTogether>true</KeepTogether>
                           <Paragraphs>
                             <Paragraph>
                               <TextRuns>
                                 <TextRun>
-                                  <Value>RATING1</Value>
+                                  <Value>Rating1 Amount</Value>
                                   <Style>
                                     <FontFamily>Arial</FontFamily>
                                   </Style>
@@ -2955,7 +2903,7 @@ OPTION (MAXRECURSION 200);</CommandText>
                               <Style />
                             </Paragraph>
                           </Paragraphs>
-                          <rd:DefaultName>Textbox67</rd:DefaultName>
+                          <rd:DefaultName>Textbox56</rd:DefaultName>
                           <Style>
                             <Border>
                               <Color>LightGrey</Color>
@@ -2971,14 +2919,14 @@ OPTION (MAXRECURSION 200);</CommandText>
                     </TablixCell>
                     <TablixCell>
                       <CellContents>
-                        <Textbox Name="Textbox69">
+                        <Textbox Name="Textbox58">
                           <CanGrow>true</CanGrow>
                           <KeepTogether>true</KeepTogether>
                           <Paragraphs>
                             <Paragraph>
                               <TextRuns>
                                 <TextRun>
-                                  <Value>RATING LEVEL1</Value>
+                                  <Value>Rating1</Value>
                                   <Style>
                                     <FontFamily>Arial</FontFamily>
                                   </Style>
@@ -2987,7 +2935,7 @@ OPTION (MAXRECURSION 200);</CommandText>
                               <Style />
                             </Paragraph>
                           </Paragraphs>
-                          <rd:DefaultName>Textbox69</rd:DefaultName>
+                          <rd:DefaultName>Textbox58</rd:DefaultName>
                           <Style>
                             <Border>
                               <Color>LightGrey</Color>
@@ -3003,14 +2951,14 @@ OPTION (MAXRECURSION 200);</CommandText>
                     </TablixCell>
                     <TablixCell>
                       <CellContents>
-                        <Textbox Name="Textbox71">
+                        <Textbox Name="Textbox60">
                           <CanGrow>true</CanGrow>
                           <KeepTogether>true</KeepTogether>
                           <Paragraphs>
                             <Paragraph>
                               <TextRuns>
                                 <TextRun>
-                                  <Value>RATING TYPE2</Value>
+                                  <Value>Rating1 Level</Value>
                                   <Style>
                                     <FontFamily>Arial</FontFamily>
                                   </Style>
@@ -3019,7 +2967,7 @@ OPTION (MAXRECURSION 200);</CommandText>
                               <Style />
                             </Paragraph>
                           </Paragraphs>
-                          <rd:DefaultName>Textbox71</rd:DefaultName>
+                          <rd:DefaultName>Textbox60</rd:DefaultName>
                           <Style>
                             <Border>
                               <Color>LightGrey</Color>
@@ -3035,14 +2983,14 @@ OPTION (MAXRECURSION 200);</CommandText>
                     </TablixCell>
                     <TablixCell>
                       <CellContents>
-                        <Textbox Name="Textbox73">
+                        <Textbox Name="Textbox62">
                           <CanGrow>true</CanGrow>
                           <KeepTogether>true</KeepTogether>
                           <Paragraphs>
                             <Paragraph>
                               <TextRuns>
                                 <TextRun>
-                                  <Value>RATING AMOUNT2</Value>
+                                  <Value>Rating2 Type</Value>
                                   <Style>
                                     <FontFamily>Arial</FontFamily>
                                   </Style>
@@ -3051,7 +2999,7 @@ OPTION (MAXRECURSION 200);</CommandText>
                               <Style />
                             </Paragraph>
                           </Paragraphs>
-                          <rd:DefaultName>Textbox73</rd:DefaultName>
+                          <rd:DefaultName>Textbox62</rd:DefaultName>
                           <Style>
                             <Border>
                               <Color>LightGrey</Color>
@@ -3067,14 +3015,14 @@ OPTION (MAXRECURSION 200);</CommandText>
                     </TablixCell>
                     <TablixCell>
                       <CellContents>
-                        <Textbox Name="Textbox75">
+                        <Textbox Name="Textbox64">
                           <CanGrow>true</CanGrow>
                           <KeepTogether>true</KeepTogether>
                           <Paragraphs>
                             <Paragraph>
                               <TextRuns>
                                 <TextRun>
-                                  <Value>RATING2</Value>
+                                  <Value>Rating2  Amount</Value>
                                   <Style>
                                     <FontFamily>Arial</FontFamily>
                                   </Style>
@@ -3083,7 +3031,7 @@ OPTION (MAXRECURSION 200);</CommandText>
                               <Style />
                             </Paragraph>
                           </Paragraphs>
-                          <rd:DefaultName>Textbox75</rd:DefaultName>
+                          <rd:DefaultName>Textbox64</rd:DefaultName>
                           <Style>
                             <Border>
                               <Color>LightGrey</Color>
@@ -3099,14 +3047,14 @@ OPTION (MAXRECURSION 200);</CommandText>
                     </TablixCell>
                     <TablixCell>
                       <CellContents>
-                        <Textbox Name="Textbox77">
+                        <Textbox Name="Textbox66">
                           <CanGrow>true</CanGrow>
                           <KeepTogether>true</KeepTogether>
                           <Paragraphs>
                             <Paragraph>
                               <TextRuns>
                                 <TextRun>
-                                  <Value>RATING LEVEL2</Value>
+                                  <Value>Rating2</Value>
                                   <Style>
                                     <FontFamily>Arial</FontFamily>
                                   </Style>
@@ -3115,7 +3063,7 @@ OPTION (MAXRECURSION 200);</CommandText>
                               <Style />
                             </Paragraph>
                           </Paragraphs>
-                          <rd:DefaultName>Textbox77</rd:DefaultName>
+                          <rd:DefaultName>Textbox66</rd:DefaultName>
                           <Style>
                             <Border>
                               <Color>LightGrey</Color>
@@ -3131,14 +3079,14 @@ OPTION (MAXRECURSION 200);</CommandText>
                     </TablixCell>
                     <TablixCell>
                       <CellContents>
-                        <Textbox Name="Textbox79">
+                        <Textbox Name="Textbox70">
                           <CanGrow>true</CanGrow>
                           <KeepTogether>true</KeepTogether>
                           <Paragraphs>
                             <Paragraph>
                               <TextRuns>
                                 <TextRun>
-                                  <Value>RATING TYPE3</Value>
+                                  <Value>Rating2 Level</Value>
                                   <Style>
                                     <FontFamily>Arial</FontFamily>
                                   </Style>
@@ -3147,7 +3095,7 @@ OPTION (MAXRECURSION 200);</CommandText>
                               <Style />
                             </Paragraph>
                           </Paragraphs>
-                          <rd:DefaultName>Textbox79</rd:DefaultName>
+                          <rd:DefaultName>Textbox70</rd:DefaultName>
                           <Style>
                             <Border>
                               <Color>LightGrey</Color>
@@ -3163,14 +3111,14 @@ OPTION (MAXRECURSION 200);</CommandText>
                     </TablixCell>
                     <TablixCell>
                       <CellContents>
-                        <Textbox Name="Textbox81">
+                        <Textbox Name="Textbox68">
                           <CanGrow>true</CanGrow>
                           <KeepTogether>true</KeepTogether>
                           <Paragraphs>
                             <Paragraph>
                               <TextRuns>
                                 <TextRun>
-                                  <Value>RATING AMOUNT3</Value>
+                                  <Value>Number of Gifts For Period</Value>
                                   <Style>
                                     <FontFamily>Arial</FontFamily>
                                   </Style>
@@ -3179,7 +3127,7 @@ OPTION (MAXRECURSION 200);</CommandText>
                               <Style />
                             </Paragraph>
                           </Paragraphs>
-                          <rd:DefaultName>Textbox81</rd:DefaultName>
+                          <rd:DefaultName>Textbox68</rd:DefaultName>
                           <Style>
                             <Border>
                               <Color>LightGrey</Color>
@@ -3195,103 +3143,7 @@ OPTION (MAXRECURSION 200);</CommandText>
                     </TablixCell>
                     <TablixCell>
                       <CellContents>
-                        <Textbox Name="Textbox83">
-                          <CanGrow>true</CanGrow>
-                          <KeepTogether>true</KeepTogether>
-                          <Paragraphs>
-                            <Paragraph>
-                              <TextRuns>
-                                <TextRun>
-                                  <Value>RATING3</Value>
-                                  <Style>
-                                    <FontFamily>Arial</FontFamily>
-                                  </Style>
-                                </TextRun>
-                              </TextRuns>
-                              <Style />
-                            </Paragraph>
-                          </Paragraphs>
-                          <rd:DefaultName>Textbox83</rd:DefaultName>
-                          <Style>
-                            <Border>
-                              <Color>LightGrey</Color>
-                              <Style>Solid</Style>
-                            </Border>
-                            <PaddingLeft>2pt</PaddingLeft>
-                            <PaddingRight>2pt</PaddingRight>
-                            <PaddingTop>2pt</PaddingTop>
-                            <PaddingBottom>2pt</PaddingBottom>
-                          </Style>
-                        </Textbox>
-                      </CellContents>
-                    </TablixCell>
-                    <TablixCell>
-                      <CellContents>
-                        <Textbox Name="Textbox85">
-                          <CanGrow>true</CanGrow>
-                          <KeepTogether>true</KeepTogether>
-                          <Paragraphs>
-                            <Paragraph>
-                              <TextRuns>
-                                <TextRun>
-                                  <Value>RATING LEVEL3</Value>
-                                  <Style>
-                                    <FontFamily>Arial</FontFamily>
-                                  </Style>
-                                </TextRun>
-                              </TextRuns>
-                              <Style />
-                            </Paragraph>
-                          </Paragraphs>
-                          <rd:DefaultName>Textbox85</rd:DefaultName>
-                          <Style>
-                            <Border>
-                              <Color>LightGrey</Color>
-                              <Style>Solid</Style>
-                            </Border>
-                            <PaddingLeft>2pt</PaddingLeft>
-                            <PaddingRight>2pt</PaddingRight>
-                            <PaddingTop>2pt</PaddingTop>
-                            <PaddingBottom>2pt</PaddingBottom>
-                          </Style>
-                        </Textbox>
-                      </CellContents>
-                    </TablixCell>
-                    <TablixCell>
-                      <CellContents>
-                        <Textbox Name="Textbox87">
-                          <CanGrow>true</CanGrow>
-                          <KeepTogether>true</KeepTogether>
-                          <Paragraphs>
-                            <Paragraph>
-                              <TextRuns>
-                                <TextRun>
-                                  <Value>Lifetime Number of Gifts</Value>
-                                  <Style>
-                                    <FontFamily>Arial</FontFamily>
-                                  </Style>
-                                </TextRun>
-                              </TextRuns>
-                              <Style />
-                            </Paragraph>
-                          </Paragraphs>
-                          <rd:DefaultName>Textbox87</rd:DefaultName>
-                          <Style>
-                            <Border>
-                              <Color>LightGrey</Color>
-                              <Style>Solid</Style>
-                            </Border>
-                            <PaddingLeft>2pt</PaddingLeft>
-                            <PaddingRight>2pt</PaddingRight>
-                            <PaddingTop>2pt</PaddingTop>
-                            <PaddingBottom>2pt</PaddingBottom>
-                          </Style>
-                        </Textbox>
-                      </CellContents>
-                    </TablixCell>
-                    <TablixCell>
-                      <CellContents>
-                        <Textbox Name="Textbox89">
+                        <Textbox Name="Textbox72">
                           <CanGrow>true</CanGrow>
                           <KeepTogether>true</KeepTogether>
                           <Paragraphs>
@@ -3307,7 +3159,325 @@ OPTION (MAXRECURSION 200);</CommandText>
                               <Style />
                             </Paragraph>
                           </Paragraphs>
-                          <rd:DefaultName>Textbox89</rd:DefaultName>
+                          <rd:DefaultName>Textbox72</rd:DefaultName>
+                          <Style>
+                            <Border>
+                              <Color>LightGrey</Color>
+                              <Style>Solid</Style>
+                            </Border>
+                            <PaddingLeft>2pt</PaddingLeft>
+                            <PaddingRight>2pt</PaddingRight>
+                            <PaddingTop>2pt</PaddingTop>
+                            <PaddingBottom>2pt</PaddingBottom>
+                          </Style>
+                        </Textbox>
+                      </CellContents>
+                    </TablixCell>
+                    <TablixCell>
+                      <CellContents>
+                        <Textbox Name="Textbox74">
+                          <CanGrow>true</CanGrow>
+                          <KeepTogether>true</KeepTogether>
+                          <Paragraphs>
+                            <Paragraph>
+                              <TextRuns>
+                                <TextRun>
+                                  <Value>Last Contibution Date</Value>
+                                  <Style>
+                                    <FontFamily>Arial</FontFamily>
+                                  </Style>
+                                </TextRun>
+                              </TextRuns>
+                              <Style />
+                            </Paragraph>
+                          </Paragraphs>
+                          <rd:DefaultName>Textbox74</rd:DefaultName>
+                          <Style>
+                            <Border>
+                              <Color>LightGrey</Color>
+                              <Style>Solid</Style>
+                            </Border>
+                            <PaddingLeft>2pt</PaddingLeft>
+                            <PaddingRight>2pt</PaddingRight>
+                            <PaddingTop>2pt</PaddingTop>
+                            <PaddingBottom>2pt</PaddingBottom>
+                          </Style>
+                        </Textbox>
+                      </CellContents>
+                    </TablixCell>
+                    <TablixCell>
+                      <CellContents>
+                        <Textbox Name="Textbox76">
+                          <CanGrow>true</CanGrow>
+                          <KeepTogether>true</KeepTogether>
+                          <Paragraphs>
+                            <Paragraph>
+                              <TextRuns>
+                                <TextRun>
+                                  <Value>Gifts in Period YTD</Value>
+                                  <Style>
+                                    <FontFamily>Arial</FontFamily>
+                                  </Style>
+                                </TextRun>
+                              </TextRuns>
+                              <Style />
+                            </Paragraph>
+                          </Paragraphs>
+                          <rd:DefaultName>Textbox76</rd:DefaultName>
+                          <Style>
+                            <Border>
+                              <Color>LightGrey</Color>
+                              <Style>Solid</Style>
+                            </Border>
+                            <PaddingLeft>2pt</PaddingLeft>
+                            <PaddingRight>2pt</PaddingRight>
+                            <PaddingTop>2pt</PaddingTop>
+                            <PaddingBottom>2pt</PaddingBottom>
+                          </Style>
+                        </Textbox>
+                      </CellContents>
+                    </TablixCell>
+                    <TablixCell>
+                      <CellContents>
+                        <Textbox Name="Textbox78">
+                          <CanGrow>true</CanGrow>
+                          <KeepTogether>true</KeepTogether>
+                          <Paragraphs>
+                            <Paragraph>
+                              <TextRuns>
+                                <TextRun>
+                                  <Value>Gifts</Value>
+                                  <Style>
+                                    <FontFamily>Arial</FontFamily>
+                                  </Style>
+                                </TextRun>
+                                <TextRun>
+                                  <Value> in Period </Value>
+                                  <Style />
+                                </TextRun>
+                                <TextRun>
+                                  <Value> Year2</Value>
+                                  <Style>
+                                    <FontFamily>Arial</FontFamily>
+                                  </Style>
+                                </TextRun>
+                              </TextRuns>
+                              <Style />
+                            </Paragraph>
+                          </Paragraphs>
+                          <rd:DefaultName>Textbox78</rd:DefaultName>
+                          <Style>
+                            <Border>
+                              <Color>LightGrey</Color>
+                              <Style>Solid</Style>
+                            </Border>
+                            <PaddingLeft>2pt</PaddingLeft>
+                            <PaddingRight>2pt</PaddingRight>
+                            <PaddingTop>2pt</PaddingTop>
+                            <PaddingBottom>2pt</PaddingBottom>
+                          </Style>
+                        </Textbox>
+                      </CellContents>
+                    </TablixCell>
+                    <TablixCell>
+                      <CellContents>
+                        <Textbox Name="Textbox80">
+                          <CanGrow>true</CanGrow>
+                          <KeepTogether>true</KeepTogether>
+                          <Paragraphs>
+                            <Paragraph>
+                              <TextRuns>
+                                <TextRun>
+                                  <Value>Gifts</Value>
+                                  <Style>
+                                    <FontFamily>Arial</FontFamily>
+                                  </Style>
+                                </TextRun>
+                                <TextRun>
+                                  <Value> in Period </Value>
+                                  <Style />
+                                </TextRun>
+                                <TextRun>
+                                  <Value>Year3</Value>
+                                  <Style>
+                                    <FontFamily>Arial</FontFamily>
+                                  </Style>
+                                </TextRun>
+                              </TextRuns>
+                              <Style />
+                            </Paragraph>
+                          </Paragraphs>
+                          <rd:DefaultName>Textbox80</rd:DefaultName>
+                          <Style>
+                            <Border>
+                              <Color>LightGrey</Color>
+                              <Style>Solid</Style>
+                            </Border>
+                            <PaddingLeft>2pt</PaddingLeft>
+                            <PaddingRight>2pt</PaddingRight>
+                            <PaddingTop>2pt</PaddingTop>
+                            <PaddingBottom>2pt</PaddingBottom>
+                          </Style>
+                        </Textbox>
+                      </CellContents>
+                    </TablixCell>
+                    <TablixCell>
+                      <CellContents>
+                        <Textbox Name="Textbox82">
+                          <CanGrow>true</CanGrow>
+                          <KeepTogether>true</KeepTogether>
+                          <Paragraphs>
+                            <Paragraph>
+                              <TextRuns>
+                                <TextRun>
+                                  <Value>Gifts</Value>
+                                  <Style>
+                                    <FontFamily>Arial</FontFamily>
+                                  </Style>
+                                </TextRun>
+                                <TextRun>
+                                  <Value> in Period </Value>
+                                  <Style />
+                                </TextRun>
+                                <TextRun>
+                                  <Value> Year4</Value>
+                                  <Style>
+                                    <FontFamily>Arial</FontFamily>
+                                  </Style>
+                                </TextRun>
+                              </TextRuns>
+                              <Style />
+                            </Paragraph>
+                          </Paragraphs>
+                          <rd:DefaultName>Textbox82</rd:DefaultName>
+                          <Style>
+                            <Border>
+                              <Color>LightGrey</Color>
+                              <Style>Solid</Style>
+                            </Border>
+                            <PaddingLeft>2pt</PaddingLeft>
+                            <PaddingRight>2pt</PaddingRight>
+                            <PaddingTop>2pt</PaddingTop>
+                            <PaddingBottom>2pt</PaddingBottom>
+                          </Style>
+                        </Textbox>
+                      </CellContents>
+                    </TablixCell>
+                    <TablixCell>
+                      <CellContents>
+                        <Textbox Name="Textbox84">
+                          <CanGrow>true</CanGrow>
+                          <KeepTogether>true</KeepTogether>
+                          <Paragraphs>
+                            <Paragraph>
+                              <TextRuns>
+                                <TextRun>
+                                  <Value>Longest Cons Years Given</Value>
+                                  <Style>
+                                    <FontFamily>Arial</FontFamily>
+                                  </Style>
+                                </TextRun>
+                              </TextRuns>
+                              <Style />
+                            </Paragraph>
+                          </Paragraphs>
+                          <rd:DefaultName>Textbox84</rd:DefaultName>
+                          <Style>
+                            <Border>
+                              <Color>LightGrey</Color>
+                              <Style>Solid</Style>
+                            </Border>
+                            <PaddingLeft>2pt</PaddingLeft>
+                            <PaddingRight>2pt</PaddingRight>
+                            <PaddingTop>2pt</PaddingTop>
+                            <PaddingBottom>2pt</PaddingBottom>
+                          </Style>
+                        </Textbox>
+                      </CellContents>
+                    </TablixCell>
+                    <TablixCell>
+                      <CellContents>
+                        <Textbox Name="Textbox86">
+                          <CanGrow>true</CanGrow>
+                          <KeepTogether>true</KeepTogether>
+                          <Paragraphs>
+                            <Paragraph>
+                              <TextRuns>
+                                <TextRun>
+                                  <Value>Recent Consecutive Years</Value>
+                                  <Style>
+                                    <FontFamily>Arial</FontFamily>
+                                  </Style>
+                                </TextRun>
+                              </TextRuns>
+                              <Style />
+                            </Paragraph>
+                          </Paragraphs>
+                          <rd:DefaultName>Textbox86</rd:DefaultName>
+                          <Style>
+                            <Border>
+                              <Color>LightGrey</Color>
+                              <Style>Solid</Style>
+                            </Border>
+                            <PaddingLeft>2pt</PaddingLeft>
+                            <PaddingRight>2pt</PaddingRight>
+                            <PaddingTop>2pt</PaddingTop>
+                            <PaddingBottom>2pt</PaddingBottom>
+                          </Style>
+                        </Textbox>
+                      </CellContents>
+                    </TablixCell>
+                    <TablixCell>
+                      <CellContents>
+                        <Textbox Name="Textbox88">
+                          <CanGrow>true</CanGrow>
+                          <KeepTogether>true</KeepTogether>
+                          <Paragraphs>
+                            <Paragraph>
+                              <TextRuns>
+                                <TextRun>
+                                  <Value>Membership Name</Value>
+                                  <Style>
+                                    <FontFamily>Arial</FontFamily>
+                                  </Style>
+                                </TextRun>
+                              </TextRuns>
+                              <Style />
+                            </Paragraph>
+                          </Paragraphs>
+                          <rd:DefaultName>Textbox88</rd:DefaultName>
+                          <Style>
+                            <Border>
+                              <Color>LightGrey</Color>
+                              <Style>Solid</Style>
+                            </Border>
+                            <PaddingLeft>2pt</PaddingLeft>
+                            <PaddingRight>2pt</PaddingRight>
+                            <PaddingTop>2pt</PaddingTop>
+                            <PaddingBottom>2pt</PaddingBottom>
+                          </Style>
+                        </Textbox>
+                      </CellContents>
+                    </TablixCell>
+                    <TablixCell>
+                      <CellContents>
+                        <Textbox Name="Textbox90">
+                          <CanGrow>true</CanGrow>
+                          <KeepTogether>true</KeepTogether>
+                          <Paragraphs>
+                            <Paragraph>
+                              <TextRuns>
+                                <TextRun>
+                                  <Value>Membership Status</Value>
+                                  <Style>
+                                    <FontFamily>Arial</FontFamily>
+                                  </Style>
+                                </TextRun>
+                              </TextRuns>
+                              <Style />
+                            </Paragraph>
+                          </Paragraphs>
+                          <rd:DefaultName>Textbox90</rd:DefaultName>
                           <Style>
                             <Border>
                               <Color>LightGrey</Color>
@@ -3330,7 +3500,7 @@ OPTION (MAXRECURSION 200);</CommandText>
                             <Paragraph>
                               <TextRuns>
                                 <TextRun>
-                                  <Value>Last Contibution Date</Value>
+                                  <Value>Membership Number</Value>
                                   <Style>
                                     <FontFamily>Arial</FontFamily>
                                   </Style>
@@ -3362,7 +3532,7 @@ OPTION (MAXRECURSION 200);</CommandText>
                             <Paragraph>
                               <TextRuns>
                                 <TextRun>
-                                  <Value>JFSG Estimated Capacity</Value>
+                                  <Value>Expiration Date</Value>
                                   <Style>
                                     <FontFamily>Arial</FontFamily>
                                   </Style>
@@ -3394,7 +3564,7 @@ OPTION (MAXRECURSION 200);</CommandText>
                             <Paragraph>
                               <TextRuns>
                                 <TextRun>
-                                  <Value>Gifts YTD</Value>
+                                  <Value>WON Memberhsip Name</Value>
                                   <Style>
                                     <FontFamily>Arial</FontFamily>
                                   </Style>
@@ -3426,7 +3596,7 @@ OPTION (MAXRECURSION 200);</CommandText>
                             <Paragraph>
                               <TextRuns>
                                 <TextRun>
-                                  <Value>Gifts Year2</Value>
+                                  <Value>WON Membership Status</Value>
                                   <Style>
                                     <FontFamily>Arial</FontFamily>
                                   </Style>
@@ -3458,7 +3628,7 @@ OPTION (MAXRECURSION 200);</CommandText>
                             <Paragraph>
                               <TextRuns>
                                 <TextRun>
-                                  <Value>Gifts Year3</Value>
+                                  <Value>WON Membership Number</Value>
                                   <Style>
                                     <FontFamily>Arial</FontFamily>
                                   </Style>
@@ -3490,7 +3660,18 @@ OPTION (MAXRECURSION 200);</CommandText>
                             <Paragraph>
                               <TextRuns>
                                 <TextRun>
-                                  <Value>Gifts Year4</Value>
+                                  <Value>WON Expiration Date</Value>
+                                  <Style>
+                                    <FontFamily>Arial</FontFamily>
+                                  </Style>
+                                </TextRun>
+                              </TextRuns>
+                              <Style />
+                            </Paragraph>
+                            <Paragraph>
+                              <TextRuns>
+                                <TextRun>
+                                  <Value />
                                   <Style>
                                     <FontFamily>Arial</FontFamily>
                                   </Style>
@@ -3522,7 +3703,7 @@ OPTION (MAXRECURSION 200);</CommandText>
                             <Paragraph>
                               <TextRuns>
                                 <TextRun>
-                                  <Value>LONGEST CONS YEARS GIVEN</Value>
+                                  <Value>FAN Membership Name</Value>
                                   <Style>
                                     <FontFamily>Arial</FontFamily>
                                   </Style>
@@ -3554,7 +3735,7 @@ OPTION (MAXRECURSION 200);</CommandText>
                             <Paragraph>
                               <TextRuns>
                                 <TextRun>
-                                  <Value>RECENT CONSECUTIVE YEARS</Value>
+                                  <Value>FAN Membership Status</Value>
                                   <Style>
                                     <FontFamily>Arial</FontFamily>
                                   </Style>
@@ -3586,7 +3767,7 @@ OPTION (MAXRECURSION 200);</CommandText>
                             <Paragraph>
                               <TextRuns>
                                 <TextRun>
-                                  <Value>MEMBERSHIP NAME</Value>
+                                  <Value>FAN Membership Number</Value>
                                   <Style>
                                     <FontFamily>Arial</FontFamily>
                                   </Style>
@@ -3618,7 +3799,7 @@ OPTION (MAXRECURSION 200);</CommandText>
                             <Paragraph>
                               <TextRuns>
                                 <TextRun>
-                                  <Value>MEMBERSHIP STATUS</Value>
+                                  <Value>FAN Expiration Date</Value>
                                   <Style>
                                     <FontFamily>Arial</FontFamily>
                                   </Style>
@@ -3643,14 +3824,14 @@ OPTION (MAXRECURSION 200);</CommandText>
                     </TablixCell>
                     <TablixCell>
                       <CellContents>
-                        <Textbox Name="Textbox124">
+                        <Textbox Name="Textbox112">
                           <CanGrow>true</CanGrow>
                           <KeepTogether>true</KeepTogether>
                           <Paragraphs>
                             <Paragraph>
                               <TextRuns>
                                 <TextRun>
-                                  <Value>MEMBERSHIP NUMBER</Value>
+                                  <Value>Preferred Email</Value>
                                   <Style>
                                     <FontFamily>Arial</FontFamily>
                                   </Style>
@@ -3659,7 +3840,7 @@ OPTION (MAXRECURSION 200);</CommandText>
                               <Style />
                             </Paragraph>
                           </Paragraphs>
-                          <rd:DefaultName>Textbox124</rd:DefaultName>
+                          <rd:DefaultName>Textbox112</rd:DefaultName>
                           <Style>
                             <Border>
                               <Color>LightGrey</Color>
@@ -3682,7 +3863,7 @@ OPTION (MAXRECURSION 200);</CommandText>
                             <Paragraph>
                               <TextRuns>
                                 <TextRun>
-                                  <Value>EXPIRATION DATE</Value>
+                                  <Value>Personal Email</Value>
                                   <Style>
                                     <FontFamily>Arial</FontFamily>
                                   </Style>
@@ -3714,7 +3895,7 @@ OPTION (MAXRECURSION 200);</CommandText>
                             <Paragraph>
                               <TextRuns>
                                 <TextRun>
-                                  <Value>WON MEMBERSHIP NAME</Value>
+                                  <Value>NSU Email</Value>
                                   <Style>
                                     <FontFamily>Arial</FontFamily>
                                   </Style>
@@ -3746,7 +3927,7 @@ OPTION (MAXRECURSION 200);</CommandText>
                             <Paragraph>
                               <TextRuns>
                                 <TextRun>
-                                  <Value>WON MEMBERSHIP STATUS</Value>
+                                  <Value>Alumni Email</Value>
                                   <Style>
                                     <FontFamily>Arial</FontFamily>
                                   </Style>
@@ -3778,7 +3959,7 @@ OPTION (MAXRECURSION 200);</CommandText>
                             <Paragraph>
                               <TextRuns>
                                 <TextRun>
-                                  <Value>WON MEMBERSHIP NUMBER</Value>
+                                  <Value>Business Email</Value>
                                   <Style>
                                     <FontFamily>Arial</FontFamily>
                                   </Style>
@@ -3810,7 +3991,7 @@ OPTION (MAXRECURSION 200);</CommandText>
                             <Paragraph>
                               <TextRuns>
                                 <TextRun>
-                                  <Value>WON EXPIRATION DATE</Value>
+                                  <Value>Home Phome</Value>
                                   <Style>
                                     <FontFamily>Arial</FontFamily>
                                   </Style>
@@ -3835,6 +4016,38 @@ OPTION (MAXRECURSION 200);</CommandText>
                     </TablixCell>
                     <TablixCell>
                       <CellContents>
+                        <Textbox Name="Textbox124">
+                          <CanGrow>true</CanGrow>
+                          <KeepTogether>true</KeepTogether>
+                          <Paragraphs>
+                            <Paragraph>
+                              <TextRuns>
+                                <TextRun>
+                                  <Value>Home Phone Preferred</Value>
+                                  <Style>
+                                    <FontFamily>Arial</FontFamily>
+                                  </Style>
+                                </TextRun>
+                              </TextRuns>
+                              <Style />
+                            </Paragraph>
+                          </Paragraphs>
+                          <rd:DefaultName>Textbox124</rd:DefaultName>
+                          <Style>
+                            <Border>
+                              <Color>LightGrey</Color>
+                              <Style>Solid</Style>
+                            </Border>
+                            <PaddingLeft>2pt</PaddingLeft>
+                            <PaddingRight>2pt</PaddingRight>
+                            <PaddingTop>2pt</PaddingTop>
+                            <PaddingBottom>2pt</PaddingBottom>
+                          </Style>
+                        </Textbox>
+                      </CellContents>
+                    </TablixCell>
+                    <TablixCell>
+                      <CellContents>
                         <Textbox Name="Textbox126">
                           <CanGrow>true</CanGrow>
                           <KeepTogether>true</KeepTogether>
@@ -3842,7 +4055,7 @@ OPTION (MAXRECURSION 200);</CommandText>
                             <Paragraph>
                               <TextRuns>
                                 <TextRun>
-                                  <Value>FAN MEMBERSHIP NAME</Value>
+                                  <Value>Cell Phone</Value>
                                   <Style>
                                     <FontFamily>Arial</FontFamily>
                                   </Style>
@@ -3874,7 +4087,7 @@ OPTION (MAXRECURSION 200);</CommandText>
                             <Paragraph>
                               <TextRuns>
                                 <TextRun>
-                                  <Value>FAN MEMBERSHIP STATUS</Value>
+                                  <Value>Cell Preferred</Value>
                                   <Style>
                                     <FontFamily>Arial</FontFamily>
                                   </Style>
@@ -3906,7 +4119,7 @@ OPTION (MAXRECURSION 200);</CommandText>
                             <Paragraph>
                               <TextRuns>
                                 <TextRun>
-                                  <Value>FAN MEMBERSHIP NUMBER</Value>
+                                  <Value>Business Phone</Value>
                                   <Style>
                                     <FontFamily>Arial</FontFamily>
                                   </Style>
@@ -3938,7 +4151,7 @@ OPTION (MAXRECURSION 200);</CommandText>
                             <Paragraph>
                               <TextRuns>
                                 <TextRun>
-                                  <Value>FAN EXPIRATION DATE</Value>
+                                  <Value>Business Phone Preferred</Value>
                                   <Style>
                                     <FontFamily>Arial</FontFamily>
                                   </Style>
@@ -3970,7 +4183,7 @@ OPTION (MAXRECURSION 200);</CommandText>
                             <Paragraph>
                               <TextRuns>
                                 <TextRun>
-                                  <Value>EMAIL PREFERRED ADDRESS</Value>
+                                  <Value>Lifetime Pledge Payments</Value>
                                   <Style>
                                     <FontFamily>Arial</FontFamily>
                                   </Style>
@@ -4002,7 +4215,7 @@ OPTION (MAXRECURSION 200);</CommandText>
                             <Paragraph>
                               <TextRuns>
                                 <TextRun>
-                                  <Value>PERS EMAIL</Value>
+                                  <Value>Total Pledge Payments</Value>
                                   <Style>
                                     <FontFamily>Arial</FontFamily>
                                   </Style>
@@ -4034,7 +4247,7 @@ OPTION (MAXRECURSION 200);</CommandText>
                             <Paragraph>
                               <TextRuns>
                                 <TextRun>
-                                  <Value>NSU EMAIL</Value>
+                                  <Value>Lifetime Giving</Value>
                                   <Style>
                                     <FontFamily>Arial</FontFamily>
                                   </Style>
@@ -4066,7 +4279,7 @@ OPTION (MAXRECURSION 200);</CommandText>
                             <Paragraph>
                               <TextRuns>
                                 <TextRun>
-                                  <Value>AL EMAIL</Value>
+                                  <Value>Total Giving</Value>
                                   <Style>
                                     <FontFamily>Arial</FontFamily>
                                   </Style>
@@ -4098,7 +4311,7 @@ OPTION (MAXRECURSION 200);</CommandText>
                             <Paragraph>
                               <TextRuns>
                                 <TextRun>
-                                  <Value>BUS EMAIL</Value>
+                                  <Value>Lifetime Premiums</Value>
                                   <Style>
                                     <FontFamily>Arial</FontFamily>
                                   </Style>
@@ -4130,7 +4343,7 @@ OPTION (MAXRECURSION 200);</CommandText>
                             <Paragraph>
                               <TextRuns>
                                 <TextRun>
-                                  <Value>Home Phome</Value>
+                                  <Value>Total Premiums</Value>
                                   <Style>
                                     <FontFamily>Arial</FontFamily>
                                   </Style>
@@ -4162,7 +4375,7 @@ OPTION (MAXRECURSION 200);</CommandText>
                             <Paragraph>
                               <TextRuns>
                                 <TextRun>
-                                  <Value>Home Phone Preferred</Value>
+                                  <Value>Lifetime Fair Market Value</Value>
                                   <Style>
                                     <FontFamily>Arial</FontFamily>
                                   </Style>
@@ -4194,7 +4407,7 @@ OPTION (MAXRECURSION 200);</CommandText>
                             <Paragraph>
                               <TextRuns>
                                 <TextRun>
-                                  <Value>CL PHONE NUMBER</Value>
+                                  <Value>Total Fair Market Value</Value>
                                   <Style>
                                     <FontFamily>Arial</FontFamily>
                                   </Style>
@@ -4226,7 +4439,7 @@ OPTION (MAXRECURSION 200);</CommandText>
                             <Paragraph>
                               <TextRuns>
                                 <TextRun>
-                                  <Value>Cell Preferred</Value>
+                                  <Value>Relationship</Value>
                                   <Style>
                                     <FontFamily>Arial</FontFamily>
                                   </Style>
@@ -4258,7 +4471,7 @@ OPTION (MAXRECURSION 200);</CommandText>
                             <Paragraph>
                               <TextRuns>
                                 <TextRun>
-                                  <Value>Business Phone</Value>
+                                  <Value>Relation Name</Value>
                                   <Style>
                                     <FontFamily>Arial</FontFamily>
                                   </Style>
@@ -4290,7 +4503,7 @@ OPTION (MAXRECURSION 200);</CommandText>
                             <Paragraph>
                               <TextRuns>
                                 <TextRun>
-                                  <Value>Business Phone Preferred</Value>
+                                  <Value>Joint Mailing</Value>
                                   <Style>
                                     <FontFamily>Arial</FontFamily>
                                   </Style>
@@ -4322,7 +4535,7 @@ OPTION (MAXRECURSION 200);</CommandText>
                             <Paragraph>
                               <TextRuns>
                                 <TextRun>
-                                  <Value>Lifetime Pledge Payments</Value>
+                                  <Value>Degree1 Degree</Value>
                                   <Style>
                                     <FontFamily>Arial</FontFamily>
                                   </Style>
@@ -4354,7 +4567,7 @@ OPTION (MAXRECURSION 200);</CommandText>
                             <Paragraph>
                               <TextRuns>
                                 <TextRun>
-                                  <Value>Total Pledge Payments</Value>
+                                  <Value>Degree1 Degree Desc</Value>
                                   <Style>
                                     <FontFamily>Arial</FontFamily>
                                   </Style>
@@ -4386,7 +4599,7 @@ OPTION (MAXRECURSION 200);</CommandText>
                             <Paragraph>
                               <TextRuns>
                                 <TextRun>
-                                  <Value>Lifetime Giving</Value>
+                                  <Value>Degree1 Major</Value>
                                   <Style>
                                     <FontFamily>Arial</FontFamily>
                                   </Style>
@@ -4418,7 +4631,7 @@ OPTION (MAXRECURSION 200);</CommandText>
                             <Paragraph>
                               <TextRuns>
                                 <TextRun>
-                                  <Value>Total Giving</Value>
+                                  <Value>Degree1 Degree Year</Value>
                                   <Style>
                                     <FontFamily>Arial</FontFamily>
                                   </Style>
@@ -4450,7 +4663,7 @@ OPTION (MAXRECURSION 200);</CommandText>
                             <Paragraph>
                               <TextRuns>
                                 <TextRun>
-                                  <Value>Lifetime Premiums</Value>
+                                  <Value>Degree2 Degree</Value>
                                   <Style>
                                     <FontFamily>Arial</FontFamily>
                                   </Style>
@@ -4482,7 +4695,7 @@ OPTION (MAXRECURSION 200);</CommandText>
                             <Paragraph>
                               <TextRuns>
                                 <TextRun>
-                                  <Value>Total Premiums</Value>
+                                  <Value>Degree2 Degree Desc</Value>
                                   <Style>
                                     <FontFamily>Arial</FontFamily>
                                   </Style>
@@ -4514,7 +4727,7 @@ OPTION (MAXRECURSION 200);</CommandText>
                             <Paragraph>
                               <TextRuns>
                                 <TextRun>
-                                  <Value>Lifetime Fair Market Value</Value>
+                                  <Value>Degree2 Major</Value>
                                   <Style>
                                     <FontFamily>Arial</FontFamily>
                                   </Style>
@@ -4546,7 +4759,7 @@ OPTION (MAXRECURSION 200);</CommandText>
                             <Paragraph>
                               <TextRuns>
                                 <TextRun>
-                                  <Value>Total Fair Market Value</Value>
+                                  <Value>Degree2 Degree Year</Value>
                                   <Style>
                                     <FontFamily>Arial</FontFamily>
                                   </Style>
@@ -4578,7 +4791,7 @@ OPTION (MAXRECURSION 200);</CommandText>
                             <Paragraph>
                               <TextRuns>
                                 <TextRun>
-                                  <Value>Relationship</Value>
+                                  <Value>Degree3 Degree</Value>
                                   <Style>
                                     <FontFamily>Arial</FontFamily>
                                   </Style>
@@ -4610,7 +4823,7 @@ OPTION (MAXRECURSION 200);</CommandText>
                             <Paragraph>
                               <TextRuns>
                                 <TextRun>
-                                  <Value>Relation Name</Value>
+                                  <Value>Degree3 Degree Desc</Value>
                                   <Style>
                                     <FontFamily>Arial</FontFamily>
                                   </Style>
@@ -4642,7 +4855,7 @@ OPTION (MAXRECURSION 200);</CommandText>
                             <Paragraph>
                               <TextRuns>
                                 <TextRun>
-                                  <Value>Joint Mailing</Value>
+                                  <Value>Degree3 Major</Value>
                                   <Style>
                                     <FontFamily>Arial</FontFamily>
                                   </Style>
@@ -4674,7 +4887,7 @@ OPTION (MAXRECURSION 200);</CommandText>
                             <Paragraph>
                               <TextRuns>
                                 <TextRun>
-                                  <Value>Degree1 Degree</Value>
+                                  <Value>Degree3 Degree Year</Value>
                                   <Style>
                                     <FontFamily>Arial</FontFamily>
                                   </Style>
@@ -4706,7 +4919,7 @@ OPTION (MAXRECURSION 200);</CommandText>
                             <Paragraph>
                               <TextRuns>
                                 <TextRun>
-                                  <Value>Degree1 Degree Desc</Value>
+                                  <Value>Employer</Value>
                                   <Style>
                                     <FontFamily>Arial</FontFamily>
                                   </Style>
@@ -4738,7 +4951,7 @@ OPTION (MAXRECURSION 200);</CommandText>
                             <Paragraph>
                               <TextRuns>
                                 <TextRun>
-                                  <Value>Degree1 Major</Value>
+                                  <Value>Position</Value>
                                   <Style>
                                     <FontFamily>Arial</FontFamily>
                                   </Style>
@@ -4770,7 +4983,7 @@ OPTION (MAXRECURSION 200);</CommandText>
                             <Paragraph>
                               <TextRuns>
                                 <TextRun>
-                                  <Value>Degree1 Degree Year</Value>
+                                  <Value>Employment Status</Value>
                                   <Style>
                                     <FontFamily>Arial</FontFamily>
                                   </Style>
@@ -4802,7 +5015,7 @@ OPTION (MAXRECURSION 200);</CommandText>
                             <Paragraph>
                               <TextRuns>
                                 <TextRun>
-                                  <Value>Degree2 Degree</Value>
+                                  <Value>Activities</Value>
                                   <Style>
                                     <FontFamily>Arial</FontFamily>
                                   </Style>
@@ -4825,363 +5038,41 @@ OPTION (MAXRECURSION 200);</CommandText>
                         </Textbox>
                       </CellContents>
                     </TablixCell>
-                    <TablixCell>
-                      <CellContents>
-                        <Textbox Name="Textbox188">
-                          <CanGrow>true</CanGrow>
-                          <KeepTogether>true</KeepTogether>
-                          <Paragraphs>
-                            <Paragraph>
-                              <TextRuns>
-                                <TextRun>
-                                  <Value>Degree2 Degree Desc</Value>
-                                  <Style>
-                                    <FontFamily>Arial</FontFamily>
-                                  </Style>
-                                </TextRun>
-                              </TextRuns>
-                              <Style />
-                            </Paragraph>
-                          </Paragraphs>
-                          <rd:DefaultName>Textbox188</rd:DefaultName>
-                          <Style>
-                            <Border>
-                              <Color>LightGrey</Color>
-                              <Style>Solid</Style>
-                            </Border>
-                            <PaddingLeft>2pt</PaddingLeft>
-                            <PaddingRight>2pt</PaddingRight>
-                            <PaddingTop>2pt</PaddingTop>
-                            <PaddingBottom>2pt</PaddingBottom>
-                          </Style>
-                        </Textbox>
-                      </CellContents>
-                    </TablixCell>
-                    <TablixCell>
-                      <CellContents>
-                        <Textbox Name="Textbox190">
-                          <CanGrow>true</CanGrow>
-                          <KeepTogether>true</KeepTogether>
-                          <Paragraphs>
-                            <Paragraph>
-                              <TextRuns>
-                                <TextRun>
-                                  <Value>Degree2 Major</Value>
-                                  <Style>
-                                    <FontFamily>Arial</FontFamily>
-                                  </Style>
-                                </TextRun>
-                              </TextRuns>
-                              <Style />
-                            </Paragraph>
-                          </Paragraphs>
-                          <rd:DefaultName>Textbox190</rd:DefaultName>
-                          <Style>
-                            <Border>
-                              <Color>LightGrey</Color>
-                              <Style>Solid</Style>
-                            </Border>
-                            <PaddingLeft>2pt</PaddingLeft>
-                            <PaddingRight>2pt</PaddingRight>
-                            <PaddingTop>2pt</PaddingTop>
-                            <PaddingBottom>2pt</PaddingBottom>
-                          </Style>
-                        </Textbox>
-                      </CellContents>
-                    </TablixCell>
-                    <TablixCell>
-                      <CellContents>
-                        <Textbox Name="Textbox192">
-                          <CanGrow>true</CanGrow>
-                          <KeepTogether>true</KeepTogether>
-                          <Paragraphs>
-                            <Paragraph>
-                              <TextRuns>
-                                <TextRun>
-                                  <Value>Degree2 Degree Year</Value>
-                                  <Style>
-                                    <FontFamily>Arial</FontFamily>
-                                  </Style>
-                                </TextRun>
-                              </TextRuns>
-                              <Style />
-                            </Paragraph>
-                          </Paragraphs>
-                          <rd:DefaultName>Textbox192</rd:DefaultName>
-                          <Style>
-                            <Border>
-                              <Color>LightGrey</Color>
-                              <Style>Solid</Style>
-                            </Border>
-                            <PaddingLeft>2pt</PaddingLeft>
-                            <PaddingRight>2pt</PaddingRight>
-                            <PaddingTop>2pt</PaddingTop>
-                            <PaddingBottom>2pt</PaddingBottom>
-                          </Style>
-                        </Textbox>
-                      </CellContents>
-                    </TablixCell>
-                    <TablixCell>
-                      <CellContents>
-                        <Textbox Name="Textbox194">
-                          <CanGrow>true</CanGrow>
-                          <KeepTogether>true</KeepTogether>
-                          <Paragraphs>
-                            <Paragraph>
-                              <TextRuns>
-                                <TextRun>
-                                  <Value>Degree3 Degree</Value>
-                                  <Style>
-                                    <FontFamily>Arial</FontFamily>
-                                  </Style>
-                                </TextRun>
-                              </TextRuns>
-                              <Style />
-                            </Paragraph>
-                          </Paragraphs>
-                          <rd:DefaultName>Textbox194</rd:DefaultName>
-                          <Style>
-                            <Border>
-                              <Color>LightGrey</Color>
-                              <Style>Solid</Style>
-                            </Border>
-                            <PaddingLeft>2pt</PaddingLeft>
-                            <PaddingRight>2pt</PaddingRight>
-                            <PaddingTop>2pt</PaddingTop>
-                            <PaddingBottom>2pt</PaddingBottom>
-                          </Style>
-                        </Textbox>
-                      </CellContents>
-                    </TablixCell>
-                    <TablixCell>
-                      <CellContents>
-                        <Textbox Name="Textbox196">
-                          <CanGrow>true</CanGrow>
-                          <KeepTogether>true</KeepTogether>
-                          <Paragraphs>
-                            <Paragraph>
-                              <TextRuns>
-                                <TextRun>
-                                  <Value>Degree3 Degree Desc</Value>
-                                  <Style>
-                                    <FontFamily>Arial</FontFamily>
-                                  </Style>
-                                </TextRun>
-                              </TextRuns>
-                              <Style />
-                            </Paragraph>
-                          </Paragraphs>
-                          <rd:DefaultName>Textbox196</rd:DefaultName>
-                          <Style>
-                            <Border>
-                              <Color>LightGrey</Color>
-                              <Style>Solid</Style>
-                            </Border>
-                            <PaddingLeft>2pt</PaddingLeft>
-                            <PaddingRight>2pt</PaddingRight>
-                            <PaddingTop>2pt</PaddingTop>
-                            <PaddingBottom>2pt</PaddingBottom>
-                          </Style>
-                        </Textbox>
-                      </CellContents>
-                    </TablixCell>
-                    <TablixCell>
-                      <CellContents>
-                        <Textbox Name="Textbox198">
-                          <CanGrow>true</CanGrow>
-                          <KeepTogether>true</KeepTogether>
-                          <Paragraphs>
-                            <Paragraph>
-                              <TextRuns>
-                                <TextRun>
-                                  <Value>Degree3 Major</Value>
-                                  <Style>
-                                    <FontFamily>Arial</FontFamily>
-                                  </Style>
-                                </TextRun>
-                              </TextRuns>
-                              <Style />
-                            </Paragraph>
-                          </Paragraphs>
-                          <rd:DefaultName>Textbox198</rd:DefaultName>
-                          <Style>
-                            <Border>
-                              <Color>LightGrey</Color>
-                              <Style>Solid</Style>
-                            </Border>
-                            <PaddingLeft>2pt</PaddingLeft>
-                            <PaddingRight>2pt</PaddingRight>
-                            <PaddingTop>2pt</PaddingTop>
-                            <PaddingBottom>2pt</PaddingBottom>
-                          </Style>
-                        </Textbox>
-                      </CellContents>
-                    </TablixCell>
-                    <TablixCell>
-                      <CellContents>
-                        <Textbox Name="Textbox200">
-                          <CanGrow>true</CanGrow>
-                          <KeepTogether>true</KeepTogether>
-                          <Paragraphs>
-                            <Paragraph>
-                              <TextRuns>
-                                <TextRun>
-                                  <Value>Degree3 Degree Year</Value>
-                                  <Style>
-                                    <FontFamily>Arial</FontFamily>
-                                  </Style>
-                                </TextRun>
-                              </TextRuns>
-                              <Style />
-                            </Paragraph>
-                          </Paragraphs>
-                          <rd:DefaultName>Textbox200</rd:DefaultName>
-                          <Style>
-                            <Border>
-                              <Color>LightGrey</Color>
-                              <Style>Solid</Style>
-                            </Border>
-                            <PaddingLeft>2pt</PaddingLeft>
-                            <PaddingRight>2pt</PaddingRight>
-                            <PaddingTop>2pt</PaddingTop>
-                            <PaddingBottom>2pt</PaddingBottom>
-                          </Style>
-                        </Textbox>
-                      </CellContents>
-                    </TablixCell>
-                    <TablixCell>
-                      <CellContents>
-                        <Textbox Name="Textbox202">
-                          <CanGrow>true</CanGrow>
-                          <KeepTogether>true</KeepTogether>
-                          <Paragraphs>
-                            <Paragraph>
-                              <TextRuns>
-                                <TextRun>
-                                  <Value>EMPLOYER</Value>
-                                  <Style>
-                                    <FontFamily>Arial</FontFamily>
-                                  </Style>
-                                </TextRun>
-                              </TextRuns>
-                              <Style />
-                            </Paragraph>
-                          </Paragraphs>
-                          <rd:DefaultName>Textbox202</rd:DefaultName>
-                          <Style>
-                            <Border>
-                              <Color>LightGrey</Color>
-                              <Style>Solid</Style>
-                            </Border>
-                            <PaddingLeft>2pt</PaddingLeft>
-                            <PaddingRight>2pt</PaddingRight>
-                            <PaddingTop>2pt</PaddingTop>
-                            <PaddingBottom>2pt</PaddingBottom>
-                          </Style>
-                        </Textbox>
-                      </CellContents>
-                    </TablixCell>
-                    <TablixCell>
-                      <CellContents>
-                        <Textbox Name="Textbox204">
-                          <CanGrow>true</CanGrow>
-                          <KeepTogether>true</KeepTogether>
-                          <Paragraphs>
-                            <Paragraph>
-                              <TextRuns>
-                                <TextRun>
-                                  <Value>POSITION</Value>
-                                  <Style>
-                                    <FontFamily>Arial</FontFamily>
-                                  </Style>
-                                </TextRun>
-                              </TextRuns>
-                              <Style />
-                            </Paragraph>
-                          </Paragraphs>
-                          <rd:DefaultName>Textbox204</rd:DefaultName>
-                          <Style>
-                            <Border>
-                              <Color>LightGrey</Color>
-                              <Style>Solid</Style>
-                            </Border>
-                            <PaddingLeft>2pt</PaddingLeft>
-                            <PaddingRight>2pt</PaddingRight>
-                            <PaddingTop>2pt</PaddingTop>
-                            <PaddingBottom>2pt</PaddingBottom>
-                          </Style>
-                        </Textbox>
-                      </CellContents>
-                    </TablixCell>
-                    <TablixCell>
-                      <CellContents>
-                        <Textbox Name="Textbox206">
-                          <CanGrow>true</CanGrow>
-                          <KeepTogether>true</KeepTogether>
-                          <Paragraphs>
-                            <Paragraph>
-                              <TextRuns>
-                                <TextRun>
-                                  <Value>Status</Value>
-                                  <Style>
-                                    <FontFamily>Arial</FontFamily>
-                                  </Style>
-                                </TextRun>
-                              </TextRuns>
-                              <Style />
-                            </Paragraph>
-                          </Paragraphs>
-                          <rd:DefaultName>Textbox206</rd:DefaultName>
-                          <Style>
-                            <Border>
-                              <Color>LightGrey</Color>
-                              <Style>Solid</Style>
-                            </Border>
-                            <PaddingLeft>2pt</PaddingLeft>
-                            <PaddingRight>2pt</PaddingRight>
-                            <PaddingTop>2pt</PaddingTop>
-                            <PaddingBottom>2pt</PaddingBottom>
-                          </Style>
-                        </Textbox>
-                      </CellContents>
-                    </TablixCell>
-                    <TablixCell>
-                      <CellContents>
-                        <Textbox Name="Textbox208">
-                          <CanGrow>true</CanGrow>
-                          <KeepTogether>true</KeepTogether>
-                          <Paragraphs>
-                            <Paragraph>
-                              <TextRuns>
-                                <TextRun>
-                                  <Value>ACTIVITIES</Value>
-                                  <Style>
-                                    <FontFamily>Arial</FontFamily>
-                                  </Style>
-                                </TextRun>
-                              </TextRuns>
-                              <Style />
-                            </Paragraph>
-                          </Paragraphs>
-                          <rd:DefaultName>Textbox208</rd:DefaultName>
-                          <Style>
-                            <Border>
-                              <Color>LightGrey</Color>
-                              <Style>Solid</Style>
-                            </Border>
-                            <PaddingLeft>2pt</PaddingLeft>
-                            <PaddingRight>2pt</PaddingRight>
-                            <PaddingTop>2pt</PaddingTop>
-                            <PaddingBottom>2pt</PaddingBottom>
-                          </Style>
-                        </Textbox>
-                      </CellContents>
-                    </TablixCell>
                   </TablixCells>
                 </TablixRow>
                 <TablixRow>
                   <Height>0.25in</Height>
                   <TablixCells>
+                    <TablixCell>
+                      <CellContents>
+                        <Textbox Name="ContactId">
+                          <CanGrow>true</CanGrow>
+                          <KeepTogether>true</KeepTogether>
+                          <Paragraphs>
+                            <Paragraph>
+                              <TextRuns>
+                                <TextRun>
+                                  <Value>=Fields!ContactId.Value</Value>
+                                  <Style />
+                                </TextRun>
+                              </TextRuns>
+                              <Style />
+                            </Paragraph>
+                          </Paragraphs>
+                          <rd:DefaultName>ContactId</rd:DefaultName>
+                          <Style>
+                            <Border>
+                              <Color>LightGrey</Color>
+                              <Style>Solid</Style>
+                            </Border>
+                            <PaddingLeft>2pt</PaddingLeft>
+                            <PaddingRight>2pt</PaddingRight>
+                            <PaddingTop>2pt</PaddingTop>
+                            <PaddingBottom>2pt</PaddingBottom>
+                          </Style>
+                        </Textbox>
+                      </CellContents>
+                    </TablixCell>
                     <TablixCell>
                       <CellContents>
                         <Textbox Name="deceased_ind">
@@ -5229,6 +5120,38 @@ OPTION (MAXRECURSION 200);</CommandText>
                             </Paragraph>
                           </Paragraphs>
                           <rd:DefaultName>date_of_birth</rd:DefaultName>
+                          <Style>
+                            <Border>
+                              <Color>LightGrey</Color>
+                              <Style>Solid</Style>
+                            </Border>
+                            <PaddingLeft>2pt</PaddingLeft>
+                            <PaddingRight>2pt</PaddingRight>
+                            <PaddingTop>2pt</PaddingTop>
+                            <PaddingBottom>2pt</PaddingBottom>
+                          </Style>
+                        </Textbox>
+                      </CellContents>
+                    </TablixCell>
+                    <TablixCell>
+                      <CellContents>
+                        <Textbox Name="pidm">
+                          <CanGrow>true</CanGrow>
+                          <KeepTogether>true</KeepTogether>
+                          <Paragraphs>
+                            <Paragraph>
+                              <TextRuns>
+                                <TextRun>
+                                  <Value>=Fields!pidm.Value</Value>
+                                  <Style>
+                                    <FontFamily>Arial</FontFamily>
+                                  </Style>
+                                </TextRun>
+                              </TextRuns>
+                              <Style />
+                            </Paragraph>
+                          </Paragraphs>
+                          <rd:DefaultName>pidm</rd:DefaultName>
                           <Style>
                             <Border>
                               <Color>LightGrey</Color>
@@ -6140,6 +6063,38 @@ OPTION (MAXRECURSION 200);</CommandText>
                     </TablixCell>
                     <TablixCell>
                       <CellContents>
+                        <Textbox Name="JFSG_Estimated_Capacity">
+                          <CanGrow>true</CanGrow>
+                          <KeepTogether>true</KeepTogether>
+                          <Paragraphs>
+                            <Paragraph>
+                              <TextRuns>
+                                <TextRun>
+                                  <Value>=Fields!JFSG_Estimated_Capacity.Value</Value>
+                                  <Style>
+                                    <FontFamily>Arial</FontFamily>
+                                  </Style>
+                                </TextRun>
+                              </TextRuns>
+                              <Style />
+                            </Paragraph>
+                          </Paragraphs>
+                          <rd:DefaultName>JFSG_Estimated_Capacity</rd:DefaultName>
+                          <Style>
+                            <Border>
+                              <Color>LightGrey</Color>
+                              <Style>Solid</Style>
+                            </Border>
+                            <PaddingLeft>2pt</PaddingLeft>
+                            <PaddingRight>2pt</PaddingRight>
+                            <PaddingTop>2pt</PaddingTop>
+                            <PaddingBottom>2pt</PaddingBottom>
+                          </Style>
+                        </Textbox>
+                      </CellContents>
+                    </TablixCell>
+                    <TablixCell>
+                      <CellContents>
                         <Textbox Name="RATING_TYPE1">
                           <CanGrow>true</CanGrow>
                           <KeepTogether>true</KeepTogether>
@@ -6396,14 +6351,14 @@ OPTION (MAXRECURSION 200);</CommandText>
                     </TablixCell>
                     <TablixCell>
                       <CellContents>
-                        <Textbox Name="RATING_TYPE3">
+                        <Textbox Name="Number_of_Gifts_For_Period">
                           <CanGrow>true</CanGrow>
                           <KeepTogether>true</KeepTogether>
                           <Paragraphs>
                             <Paragraph>
                               <TextRuns>
                                 <TextRun>
-                                  <Value>=Fields!RATING_TYPE3.Value</Value>
+                                  <Value>=Fields!Number_of_Gifts_For_Period.Value</Value>
                                   <Style>
                                     <FontFamily>Arial</FontFamily>
                                   </Style>
@@ -6412,135 +6367,7 @@ OPTION (MAXRECURSION 200);</CommandText>
                               <Style />
                             </Paragraph>
                           </Paragraphs>
-                          <rd:DefaultName>RATING_TYPE3</rd:DefaultName>
-                          <Style>
-                            <Border>
-                              <Color>LightGrey</Color>
-                              <Style>Solid</Style>
-                            </Border>
-                            <PaddingLeft>2pt</PaddingLeft>
-                            <PaddingRight>2pt</PaddingRight>
-                            <PaddingTop>2pt</PaddingTop>
-                            <PaddingBottom>2pt</PaddingBottom>
-                          </Style>
-                        </Textbox>
-                      </CellContents>
-                    </TablixCell>
-                    <TablixCell>
-                      <CellContents>
-                        <Textbox Name="RATING_AMOUNT3">
-                          <CanGrow>true</CanGrow>
-                          <KeepTogether>true</KeepTogether>
-                          <Paragraphs>
-                            <Paragraph>
-                              <TextRuns>
-                                <TextRun>
-                                  <Value>=Fields!RATING_AMOUNT3.Value</Value>
-                                  <Style>
-                                    <FontFamily>Arial</FontFamily>
-                                  </Style>
-                                </TextRun>
-                              </TextRuns>
-                              <Style />
-                            </Paragraph>
-                          </Paragraphs>
-                          <rd:DefaultName>RATING_AMOUNT3</rd:DefaultName>
-                          <Style>
-                            <Border>
-                              <Color>LightGrey</Color>
-                              <Style>Solid</Style>
-                            </Border>
-                            <PaddingLeft>2pt</PaddingLeft>
-                            <PaddingRight>2pt</PaddingRight>
-                            <PaddingTop>2pt</PaddingTop>
-                            <PaddingBottom>2pt</PaddingBottom>
-                          </Style>
-                        </Textbox>
-                      </CellContents>
-                    </TablixCell>
-                    <TablixCell>
-                      <CellContents>
-                        <Textbox Name="RATING3">
-                          <CanGrow>true</CanGrow>
-                          <KeepTogether>true</KeepTogether>
-                          <Paragraphs>
-                            <Paragraph>
-                              <TextRuns>
-                                <TextRun>
-                                  <Value>=Fields!RATING3.Value</Value>
-                                  <Style>
-                                    <FontFamily>Arial</FontFamily>
-                                  </Style>
-                                </TextRun>
-                              </TextRuns>
-                              <Style />
-                            </Paragraph>
-                          </Paragraphs>
-                          <rd:DefaultName>RATING3</rd:DefaultName>
-                          <Style>
-                            <Border>
-                              <Color>LightGrey</Color>
-                              <Style>Solid</Style>
-                            </Border>
-                            <PaddingLeft>2pt</PaddingLeft>
-                            <PaddingRight>2pt</PaddingRight>
-                            <PaddingTop>2pt</PaddingTop>
-                            <PaddingBottom>2pt</PaddingBottom>
-                          </Style>
-                        </Textbox>
-                      </CellContents>
-                    </TablixCell>
-                    <TablixCell>
-                      <CellContents>
-                        <Textbox Name="RATING_LEVEL3">
-                          <CanGrow>true</CanGrow>
-                          <KeepTogether>true</KeepTogether>
-                          <Paragraphs>
-                            <Paragraph>
-                              <TextRuns>
-                                <TextRun>
-                                  <Value>=Fields!RATING_LEVEL3.Value</Value>
-                                  <Style>
-                                    <FontFamily>Arial</FontFamily>
-                                  </Style>
-                                </TextRun>
-                              </TextRuns>
-                              <Style />
-                            </Paragraph>
-                          </Paragraphs>
-                          <rd:DefaultName>RATING_LEVEL3</rd:DefaultName>
-                          <Style>
-                            <Border>
-                              <Color>LightGrey</Color>
-                              <Style>Solid</Style>
-                            </Border>
-                            <PaddingLeft>2pt</PaddingLeft>
-                            <PaddingRight>2pt</PaddingRight>
-                            <PaddingTop>2pt</PaddingTop>
-                            <PaddingBottom>2pt</PaddingBottom>
-                          </Style>
-                        </Textbox>
-                      </CellContents>
-                    </TablixCell>
-                    <TablixCell>
-                      <CellContents>
-                        <Textbox Name="Lifetime_Number_of_Gifts">
-                          <CanGrow>true</CanGrow>
-                          <KeepTogether>true</KeepTogether>
-                          <Paragraphs>
-                            <Paragraph>
-                              <TextRuns>
-                                <TextRun>
-                                  <Value>=Fields!Lifetime_Number_of_Gifts.Value</Value>
-                                  <Style>
-                                    <FontFamily>Arial</FontFamily>
-                                  </Style>
-                                </TextRun>
-                              </TextRuns>
-                              <Style />
-                            </Paragraph>
-                          </Paragraphs>
-                          <rd:DefaultName>Lifetime_Number_of_Gifts</rd:DefaultName>
+                          <rd:DefaultName>Number_of_Gifts_For_Period</rd:DefaultName>
                           <Style>
                             <Border>
                               <Color>LightGrey</Color>
@@ -6605,38 +6432,6 @@ OPTION (MAXRECURSION 200);</CommandText>
                             </Paragraph>
                           </Paragraphs>
                           <rd:DefaultName>Last_Contibution_Date</rd:DefaultName>
-                          <Style>
-                            <Border>
-                              <Color>LightGrey</Color>
-                              <Style>Solid</Style>
-                            </Border>
-                            <PaddingLeft>2pt</PaddingLeft>
-                            <PaddingRight>2pt</PaddingRight>
-                            <PaddingTop>2pt</PaddingTop>
-                            <PaddingBottom>2pt</PaddingBottom>
-                          </Style>
-                        </Textbox>
-                      </CellContents>
-                    </TablixCell>
-                    <TablixCell>
-                      <CellContents>
-                        <Textbox Name="JFSG_Estimated_Capacity">
-                          <CanGrow>true</CanGrow>
-                          <KeepTogether>true</KeepTogether>
-                          <Paragraphs>
-                            <Paragraph>
-                              <TextRuns>
-                                <TextRun>
-                                  <Value>=Fields!JFSG_Estimated_Capacity.Value</Value>
-                                  <Style>
-                                    <FontFamily>Arial</FontFamily>
-                                  </Style>
-                                </TextRun>
-                              </TextRuns>
-                              <Style />
-                            </Paragraph>
-                          </Paragraphs>
-                          <rd:DefaultName>JFSG_Estimated_Capacity</rd:DefaultName>
                           <Style>
                             <Border>
                               <Color>LightGrey</Color>
@@ -6908,7 +6703,7 @@ OPTION (MAXRECURSION 200);</CommandText>
                     </TablixCell>
                     <TablixCell>
                       <CellContents>
-                        <Textbox Name="MEMBERSHIP_NUMBER1">
+                        <Textbox Name="MEMBERSHIP_NUMBER">
                           <CanGrow>true</CanGrow>
                           <KeepTogether>true</KeepTogether>
                           <Paragraphs>
@@ -6924,7 +6719,7 @@ OPTION (MAXRECURSION 200);</CommandText>
                               <Style />
                             </Paragraph>
                           </Paragraphs>
-                          <rd:DefaultName>MEMBERSHIP_NUMBER1</rd:DefaultName>
+                          <rd:DefaultName>MEMBERSHIP_NUMBER</rd:DefaultName>
                           <Style>
                             <Border>
                               <Color>LightGrey</Color>
@@ -6950,6 +6745,7 @@ OPTION (MAXRECURSION 200);</CommandText>
                                   <Value>=Fields!EXPIRATION_DATE.Value</Value>
                                   <Style>
                                     <FontFamily>Arial</FontFamily>
+                                    <Format>MM/dd/yyyy</Format>
                                   </Style>
                                 </TextRun>
                               </TextRuns>
@@ -7078,6 +6874,7 @@ OPTION (MAXRECURSION 200);</CommandText>
                                   <Value>=Fields!WON_EXPIRATION_DATE.Value</Value>
                                   <Style>
                                     <FontFamily>Arial</FontFamily>
+                                    <Format>MM/dd/yyyy</Format>
                                   </Style>
                                 </TextRun>
                               </TextRuns>
@@ -7206,6 +7003,7 @@ OPTION (MAXRECURSION 200);</CommandText>
                                   <Value>=Fields!FAN_EXPIRATION_DATE.Value</Value>
                                   <Style>
                                     <FontFamily>Arial</FontFamily>
+                                    <Format>MM/dd/yyyy</Format>
                                   </Style>
                                 </TextRun>
                               </TextRuns>
@@ -8548,8 +8346,6 @@ OPTION (MAXRECURSION 200);</CommandText>
                 <TablixMember />
                 <TablixMember />
                 <TablixMember />
-                <TablixMember />
-                <TablixMember />
               </TablixMembers>
             </TablixColumnHierarchy>
             <TablixRowHierarchy>
@@ -8564,7 +8360,7 @@ OPTION (MAXRECURSION 200);</CommandText>
             </TablixRowHierarchy>
             <DataSetName>ds_standardConstituent</DataSetName>
             <Height>0.5in</Height>
-            <Width>102.36459in</Width>
+            <Width>100in</Width>
             <Style>
               <Border>
                 <Style>None</Style>
@@ -8572,7 +8368,7 @@ OPTION (MAXRECURSION 200);</CommandText>
             </Style>
           </Tablix>
         </ReportItems>
-        <Height>1.07in</Height>
+        <Height>0.5in</Height>
         <Style />
       </Body>
       <Width>102.36459in</Width>
@@ -8675,6 +8471,27 @@ OPTION (MAXRECURSION 200);</CommandText>
       </ValidValues>
       <MultiValue>true</MultiValue>
     </ReportParameter>
+    <ReportParameter Name="p_ignore_academic_years">
+      <DataType>String</DataType>
+      <DefaultValue>
+        <Values>
+          <Value>Y</Value>
+        </Values>
+      </DefaultValue>
+      <Prompt>Ignore Academic Year?</Prompt>
+      <ValidValues>
+        <ParameterValues>
+          <ParameterValue>
+            <Value>Y</Value>
+            <Label>Y</Label>
+          </ParameterValue>
+          <ParameterValue>
+            <Value>N</Value>
+            <Label>N</Label>
+          </ParameterValue>
+        </ParameterValues>
+      </ValidValues>
+    </ReportParameter>
     <ReportParameter Name="p_academic_years">
       <DataType>String</DataType>
       <DefaultValue>
@@ -8696,7 +8513,7 @@ OPTION (MAXRECURSION 200);</CommandText>
   <ReportParametersLayout>
     <GridLayoutDefinition>
       <NumberOfColumns>4</NumberOfColumns>
-      <NumberOfRows>3</NumberOfRows>
+      <NumberOfRows>4</NumberOfRows>
       <CellDefinitions>
         <CellDefinition>
           <ColumnIndex>0</ColumnIndex>
@@ -8730,6 +8547,11 @@ OPTION (MAXRECURSION 200);</CommandText>
         </CellDefinition>
         <CellDefinition>
           <ColumnIndex>2</ColumnIndex>
+          <RowIndex>2</RowIndex>
+          <ParameterName>p_ignore_academic_years</ParameterName>
+        </CellDefinition>
+        <CellDefinition>
+          <ColumnIndex>3</ColumnIndex>
           <RowIndex>2</RowIndex>
           <ParameterName>p_academic_years</ParameterName>
         </CellDefinition>
