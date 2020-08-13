@@ -244,3 +244,17 @@ elcn_shares
 elcn_valuationdate*/
 
 select * from datatel_countrybase;
+
+
+select * from elcn_addressassociationbase
+where elcn_personid  = '1D4F208E-FFF6-4C2B-8223-1FA93D529BF0'
+and elcn_AddressStatusId = '378DE114-EB09-E511-943C-0050568068B7' -- current 
+;
+select * from elcn_addresstypeBase -- home, mailing
+--where elcn_addresstypeid in ('1FCAAA59-DD18-E611-8187-064A033FBA9D','DED8E027-5925-4115-9E91-E040BA082EF4');
+
+where elcn_addresstypeid = 'CC535A28-13DE-42F4-B60C-EAFC70983281';
+
+select * from elcn_designationrelationshipBase;
+select * from elcn_designationrelationshiptypebase;
+

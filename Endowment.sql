@@ -56,6 +56,27 @@ CREATE NONCLUSTERED INDEX INDX_TMP_ID_SALU ON #temp_aprsalu (elcn_personId,salu_
 ;
 CREATE NONCLUSTERED INDEX INDX_TMP_ID ON #temp_designation (elcn_designationId);
 
+SELECT
+	ab.elcn_addressId 
+	, ab.elcn_street1  Street_Line1
+	, ab.elcn_street2  Street_Line2
+	, ab.elcn_City  City
+	, spb.elcn_stateprovinceId 
+	, spb.elcn_Abbreviation  State_Province
+	, ab.elcn_postalcode  Postal_Code
+	, ab.elcn_county	County
+	, dcb.Datatel_name	Nation
+INTO
+	#temp_addresses
+FROM
+	elcn_addressBase AB
+	JOIN elcn_stateprovinceBase SPB
+		ON spb.elcn_stateprovinceId = ab.elcn_StateProvinceId
+	JOIN Datatel_countryBase DCB
+		ON dcb.Datatel_countryId = ab.elcn_country		
+;
+CREATE NONCLUSTERED INDEX INDX_TMP_ADDRID ON #temp_addresses (elcn_addressId);
+
 DECLARE @p_year nvarchar(4) = '2019';
 
 SELECT
@@ -67,15 +88,18 @@ SELECT
 --	, fab.elcn_DesignationId
 	, donor.datatel_EnterpriseSystemId	Designation_Contact_ID
 	, donor.elcn_SortName				Designation_Contact_Name
+	, drtb.elcn_type					Designation_Relationship
 --	, casualjoint_salu.elcn_personid
 	, casualjoint_salu.elcn_formattedname	MAILING_First_Name
 	, mailingjoint_salu.elcn_formattedname	MAILING_Full_Name
-	, ab.elcn_street1					MAILING_Street_1
-	, ab.elcn_street2					MAILING_Street_2
-	, ab.elcn_City						MAILING_City
-	, spb.elcn_Abbreviation				MAILING_State
-	, ab.elcn_postalcode				MAILING_Postal_Code
-	, dcb.Datatel_abbreviation			MAILING_Nation
+
+--	, donor.contactid  
+	, daddress.Street_Line1					MAILING_Street_1
+	, daddress.Street_Line2					MAILING_Street_2
+	, daddress.city							MAILING_City
+	, daddress.State_Province				MAILING_State
+	, daddress.Postal_Code					MAILING_Postal_Code
+	, daddress.Nation						MAILING_Nation
 	, scholar.fullname					Scholar_Name
 	, scholar.elcn_SortName				Scholar_Sort_Name
 	, notes.notetext					Designation_Comment
@@ -102,6 +126,8 @@ FROM
 	 where SUBSTRING(fund,1,1) = 'E') DB 
 	LEFT JOIN elcn_designationrelationshipBase DRB
 		ON db.elcn_designationid = drb.elcn_designationid
+	LEFT JOIN elcn_designationrelationshiptypebase drtb
+		ON drb.elcn_DesignationRelationshipTypeId = drtb.elcn_designationrelationshiptypeId
 	LEFT JOIN annotationbase NOTES
 		ON drb.elcn_designationrelationshipId = notes.ObjectId
 
@@ -114,16 +140,13 @@ FROM
 	LEFT JOIN #temp_aprsalu MAILINGJOINT_SALU
 		ON  donor.contactid = mailingjoint_salu.elcn_personid
 		AND mailingjoint_salu.salu_code = 'CIFE'
+
 	LEFT JOIN elcn_addressassociationBase aab 
-		ON aab.elcn_personId = donor.ContactId 
-		AND aab.elcn_addresstypeid = 'CC535A28-13DE-42F4-B60C-EAFC70983281' /* Mailing */
+		ON donor.ContactId = aab.elcn_personId 
+		AND aab.elcn_addresstypeid = 'DED8E027-5925-4115-9E91-E040BA082EF4' /* Mailing */
 		AND elcn_AddressStatusId = '378DE114-EB09-E511-943C-0050568068B7' /* Current */
-	LEFT JOIN elcn_addressBase ab 
-		ON ab.elcn_addressId = aab.elcn_AddressId
-	LEFT JOIN elcn_stateprovinceBase spb 
-		ON spb.elcn_stateprovinceId = ab.elcn_StateProvinceId
-	LEFT JOIN Datatel_countryBase dcb 
-		ON dcb.Datatel_countryId = ab.elcn_country
+	LEFT JOIN #temp_addresses DADDRESS
+		ON aab.elcn_AddressId = daddress.elcn_addressId
 		
 -->> Scholar Information
 	LEFT JOIN elcn_financialawardbase FAB
@@ -156,4 +179,6 @@ FROM
 	) EDVAL ON db.elcn_designationid = edval.elcn_designationId
 		AND edval.rn = 1 -- Most recent valuation
 
-order by db.elcn_code;
+ORDER BY
+	db.elcn_code
+;
