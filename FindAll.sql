@@ -1,11 +1,11 @@
 ﻿/* Reto Egeter, fullparam.wordpress.com */
 
 DECLARE	@SearchStrTableName nvarchar(255), @SearchStrColumnName nvarchar(255), @SearchStrColumnValue nvarchar(255), @SearchStrInXML bit, @FullRowResult bit, @FullRowResultRows int
-SET @SearchStrColumnValue = '%McIntosh%' /* use LIKE syntax */
+SET @SearchStrColumnValue = '%16FD5630-A073-4C4E-ADDD-2F1D2689F556%' /* use LIKE syntax */
 SET @FullRowResult = 1
 SET @FullRowResultRows = 3
 SET @SearchStrTableName = NULL /* NULL for all tables, uses LIKE syntax */
-SET @SearchStrColumnName = NULL /* NULL for all columns, uses LIKE syntax */
+SET @SearchStrColumnName =  NULL /* NULL for all columns, uses LIKE syntax */
 SET @SearchStrInXML = 0 /* Searching XML data may be slow */
 
 IF OBJECT_ID('tempdb..#Results') IS NOT NULL DROP TABLE #Results

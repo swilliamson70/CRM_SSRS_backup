@@ -62,6 +62,7 @@
     <Report Include="Standard_Constituent - Copy.rdl" />
     <Report Include="Standard_Constituent.rdl" />
     <Report Include="StringMapBase test.rdl" />
+    <Report Include="Tax Letters.rdl" />
   </ItemGroup>
   <Import Project="$(MSBuildExtensionsPath)\Reporting Services\Microsoft.ReportingServices.MSBuilder.targets" />
 </Project>
