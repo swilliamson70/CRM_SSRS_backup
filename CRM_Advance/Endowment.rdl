@@ -85,7 +85,7 @@ SELECT
 	, spb.elcn_Abbreviation  State_Province
 	, ab.elcn_postalcode  Postal_Code
 	, ab.elcn_county	County
-	, dcb.Datatel_name	Nation
+	, dcb.Datatel_abbreviation	Nation
 INTO
 	#temp_addresses
 FROM
@@ -96,8 +96,7 @@ FROM
 		ON dcb.Datatel_countryId = ab.elcn_country		
 ;
 CREATE NONCLUSTERED INDEX INDX_TMP_ADDRID ON #temp_addresses (elcn_addressId);
-
---DECLARE @p_year nvarchar(4) = '2019';
+--select * from #temp_addresses where elcn_addressid = '652BADE8-8C19-4129-AF87-BFBF23513344'
 
 SELECT
 	db.elcn_code					AS	Designation
@@ -106,20 +105,55 @@ SELECT
 	--, elcn_designationtype -- GUID
 	--, db.elcn_designationid 
 --	, fab.elcn_DesignationId
+--	, drb.elcn_OrganizationID drb_elcn_OrganizationID
+
 	, donor.datatel_EnterpriseSystemId	Designation_Contact_ID
 	, donor.elcn_SortName				Designation_Contact_Name
 	, drtb.elcn_type					Designation_Relationship
 --	, casualjoint_salu.elcn_personid
 	, casualjoint_salu.elcn_formattedname	MAILING_First_Name
-	, mailingjoint_salu.elcn_formattedname	MAILING_Full_Name
+	, CASE 
+		WHEN donor.datatel_enterprisesystemid IS NULL THEN 
+			donor_org.elcn_name
+		ELSE mailingjoint_salu.elcn_formattedname
+	END MAILING_Full_Name
 
---	, donor.contactid  
-	, daddress.Street_Line1					MAILING_Street_1
-	, daddress.Street_Line2					MAILING_Street_2
-	, daddress.city							MAILING_City
-	, daddress.State_Province				MAILING_State
-	, daddress.Postal_Code					MAILING_Postal_Code
-	, daddress.Nation						MAILING_Nation
+--	, donor.contactid 
+	--, org_aab.elcn_addressassociationId org_aab_elcn_addressassociationid
+	--, org_aab.elcn_AddressId org_aab_elcn_addressid
+	--, do_address.elcn_addressId
+
+	, CASE 
+		WHEN donor.datatel_enterpriseSystemId IS NULL THEN 
+			do_address.Street_Line1
+		ELSE daddress.Street_Line1
+	END MAILING_Street_1
+	, CASE 
+		WHEN donor.datatel_enterpriseSystemId IS NULL THEN 
+			do_address.Street_Line2
+		ELSE daddress.Street_Line2
+	END MAILING_Street_2
+	, CASE 
+		WHEN donor.datatel_enterpriseSystemId IS NULL THEN 
+			do_address.city
+		ELSE daddress.city
+	END MAILING_City
+	, CASE 
+		WHEN donor.datatel_enterpriseSystemId IS NULL THEN 
+			do_address.State_Province
+		ELSE daddress.State_Province
+	END MAILING_State
+	, CASE 
+		WHEN donor.datatel_enterpriseSystemId IS NULL THEN 
+			do_address.Postal_Code
+		ELSE daddress.Postal_Code
+	END MAILING_Postal_Code
+	, CASE 
+		WHEN donor.datatel_enterpriseSystemId IS NULL THEN 
+			do_address.Nation
+		ELSE daddress.Nation
+	END MAILING_Nation
+	
 	, scholar.fullname					Scholar_Name
 	, scholar.elcn_SortName				Scholar_Sort_Name
 	, notes.notetext					Designation_Comment
@@ -151,7 +185,7 @@ FROM
 	LEFT JOIN annotationbase NOTES
 		ON drb.elcn_designationrelationshipId = notes.ObjectId
 
---&gt;&gt; Donor Information
+--&gt;&gt; Person-Donor Information
 	LEFT JOIN contactbase DONOR
 		ON drb.elcn_personid = donor.contactid
 	LEFT JOIN #temp_aprsalu CASUALJOINT_SALU
@@ -167,6 +201,20 @@ FROM
 		AND elcn_AddressStatusId = '378DE114-EB09-E511-943C-0050568068B7' /* Current */
 	LEFT JOIN #temp_addresses DADDRESS
 		ON aab.elcn_AddressId = daddress.elcn_addressId
+
+--&gt;&gt; Organization-Donor Information
+	LEFT JOIN elcn_organizationnamebase DONOR_ORG
+		ON drb.elcn_OrganizationID = donor_org.elcn_OrganizationId
+
+	LEFT JOIN elcn_addressassociationBase org_aab 
+		ON donor_org.elcn_OrganizationId = org_aab.elcn_OrganizationId
+		--AND org_aab.elcn_addresstypeid = '21CAAA59-DD18-E611-8187-064A033FBA9D' /* Business */
+		--AND org_aab.elcn_AddressStatusId = '378DE114-EB09-E511-943C-0050568068B7' /* Current */
+		AND org_aab.elcn_Preferred = 1
+
+	LEFT JOIN #temp_addresses DO_ADDRESS
+		ON org_aab.elcn_AddressId = do_address.elcn_addressId
+--select * from #temp_addresses 
 		
 --&gt;&gt; Scholar Information
 	LEFT JOIN elcn_financialawardbase FAB
@@ -1313,7 +1361,6 @@ ORDER BY
                             <PaddingBottom>2pt</PaddingBottom>
                           </Style>
                         </Textbox>
-                        <rd:Selected>true</rd:Selected>
                       </CellContents>
                     </TablixCell>
                     <TablixCell>

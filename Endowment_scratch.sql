@@ -253,8 +253,17 @@ and elcn_AddressStatusId = '378DE114-EB09-E511-943C-0050568068B7' -- current
 select * from elcn_addresstypeBase -- home, mailing
 --where elcn_addresstypeid in ('1FCAAA59-DD18-E611-8187-064A033FBA9D','DED8E027-5925-4115-9E91-E040BA082EF4');
 
-where elcn_addresstypeid = 'CC535A28-13DE-42F4-B60C-EAFC70983281';
+where elcn_addresstypeid = '21CAAA59-DD18-E611-8187-064A033FBA9D';
 
 select * from elcn_designationrelationshipBase;
 select * from elcn_designationrelationshiptypebase;
 
+select * from elcn_organizationnamebase where elcn_OrganizationId = '00BF742E-0D3E-4E79-9CD7-4557F3B07DF9';
+00BF742E-0D3E-4E79-9CD7-4557F3B07DF9
+select * from elcn_addressassociationBase where elcn_OrganizationId = '00BF742E-0D3E-4E79-9CD7-4557F3B07DF9' --'EF081C1B-E58F-48BA-909C-C984FF4062CA'
+and elcn_addresstypeid = '21CAAA59-DD18-E611-8187-064A033FBA9D';
+
+--address id 652BADE8-8C19-4129-AF87-BFBF23513344
+select * from elcn_addressbase where elcn_addressid = '652BADE8-8C19-4129-AF87-BFBF23513344';
+
+select * from Datatel_countryBase;
