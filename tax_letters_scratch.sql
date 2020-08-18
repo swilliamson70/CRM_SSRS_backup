@@ -70,3 +70,10 @@ select cdb.* from elcn_contributiondonorbase cdb
 where cdb.elcn_person = '21F60CA1-95A8-4F92-87A2-E817F4B7B46F'
 */
 select * from elcn_contributionpaymentBase;
+
+select * from contactbase; --elcn_PersonType 344220000
+select * from stringmap where attributename like '%Person%';
+select * from filteredstringmap sm
+where sm.FilteredViewName = 'Filteredcontactbase'
+AND attributeName = 'elcn_category'
+and attributevalue = 344220000

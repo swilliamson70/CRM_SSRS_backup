@@ -26,6 +26,7 @@
 	, @p_degrees varchar(99) -- a - associates, aa - associates in arts
 	, @p_ignore_activities varchar(1) = 'Y'
 	, @p_ignore_academic_years varchar(1) = 'Y'
+	, @p_exclude_nongivers varchar(1) = 'N'
 	;
 /*
 WITH W_CONTACTID_LIST AS(
@@ -57,7 +58,7 @@ WITH W_CONTACTID_LIST AS(
 		)
 )
 */
-DECLARE @p_StartDate date, @p_EndDate date;
+DECLARE @p_StartDate date = '01/01/2019', @p_EndDate date = '12/31/2019';
 SELECT
 	cb.contactid
 	, CASE
@@ -216,6 +217,49 @@ FROM(
 ;
 CREATE NONCLUSTERED INDEX INDX_TMP_ID_RATINGTYPE ON #temp_ratings (elcn_personid, elcn_ratingtypeid);
 
+SELECT DISTINCT
+	elcn_person
+	, Total_Giving
+	, Total_Premiums
+	, Total_Fair_Market_value
+	, Gift_Count
+FROM(
+	SELECT 
+		elcn_person
+		, SUM(elcn_RecognitionCredit) Total_Giving
+		, SUM(elcn_TotalPremiumFairMarketValue)  Total_Premiums
+		, SUM(elcn_contribution.elcn_marketValue) Total_Fair_Market_Value
+		--, null gift_count
+		, COUNT(elcn_RecognitionCredit) Gift_Count
+	FROM
+		elcn_contributiondonorBase
+		JOIN elcn_contribution  
+			ON elcn_contributiondonorBase.elcn_contribution = elcn_contribution.elcn_contributionId
+	WHERE
+		elcn_contribution.statuscode = 1
+		AND elcn_contribution.elcn_contributionType IN (344220000, 
+														344220001, 
+														344220004,
+														344220005) 
+		and elcn_contributiondonorBase.elcn_ContributionDate BETWEEN @p_StartDate AND @p_EndDate
+	GROUP BY elcn_person
+	UNION
+	SELECT 
+		elcn_person
+		, null
+		, null
+		, null
+		, null
+	FROM
+		contributiondonorBase
+	WHERE
+		@p_exclude_givers = 'N'
+	)
+INTO
+#temp_contributions
+;
+CREATE NONCLUSTERED INDEX INDX_TMP_ID on #temp_contributions (elcn_person);
+
 SELECT
 	mb.elcn_PrimaryMemberPersonId
 	, mpl.elcn_name
@@ -344,7 +388,7 @@ SELECT
 	, [3] Year3
 	, [4] Year4
 INTO
-	#temp_recognitioncredit
+	#temp_giving_pivot
 FROM
 	(
 	SELECT
@@ -370,7 +414,7 @@ FROM
 		IN ([0], [1], [2], [3], [4])
 	)PVT;
 
-CREATE NONCLUSTERED INDEX INDX_TMP_ID ON #temp_recognitioncredit (elcn_person);
+CREATE NONCLUSTERED INDEX INDX_TMP_ID ON #temp_giving_pivot (elcn_person);
 
 SELECT DISTINCT  
 	elcn_person personid,
@@ -425,7 +469,7 @@ SELECT
 	, addresses.Nation
 
 	, atb.elcn_type AS Preferred_Address_Type 
-
+/*
 	, CASE WHEN(
 			SELECT 1 X
 			WHERE EXISTS(
@@ -543,7 +587,7 @@ SELECT
 					AND cpb.elcn_personId = const.ContactId
 				)
 			) IS NOT NULL THEN 'NTP' END AS NTP
-
+*/
 	, const.anonymityType Anonymity_Type
 
 	, jfsg_est_cap.value JFSG_Estimated_Capacity
@@ -556,22 +600,23 @@ SELECT
 	, ratings2.rating_value RATING2
 	, ratings2.rating_level RATING_LEVEL2
 
-	, (
-		SELECT
-			COUNT(elcn_RecognitionCredit)
-		FROM
-			elcn_contributiondonorBase
-			JOIN elcn_contribution  
-				ON elcn_contributiondonorBase.elcn_contribution = elcn_contribution.elcn_contributionId
-		WHERE
-			elcn_contributiondonorBase.elcn_person = const.ContactId
-			AND elcn_contribution.statuscode = 1
-			AND elcn_contribution.elcn_contributionType IN (344220000, 
-															344220001, 
-															344220004, 
-															344220005) 
-			and elcn_contributiondonorBase.elcn_ContributionDate BETWEEN @p_StartDate AND @p_EndDate
-		) Number_of_Gifts_For_Period
+	--, (
+	--	SELECT
+	--		COUNT(elcn_RecognitionCredit)
+	--	FROM
+	--		elcn_contributiondonorBase
+	--		JOIN elcn_contribution  
+	--			ON elcn_contributiondonorBase.elcn_contribution = elcn_contribution.elcn_contributionId
+	--	WHERE
+	--		elcn_contributiondonorBase.elcn_person = const.ContactId
+	--		AND elcn_contribution.statuscode = 1
+	--		AND elcn_contribution.elcn_contributionType IN (344220000, 
+	--														344220001, 
+	--														344220004, 
+	--														344220005) 
+	--		and elcn_contributiondonorBase.elcn_ContributionDate BETWEEN @p_StartDate AND @p_EndDate
+	--	) 
+	, period_totals.Gift_Count Number_of_Gifts_For_Period
 
 	, const.Largest_Contribution_Amount 
 	, CONVERT(VARCHAR,const.elcn_LastContributionDate,101) Last_Contibution_Date 
@@ -583,7 +628,7 @@ SELECT
 	
 	, longest_consec.longest_consec_years  LONGEST_CONS_YEARS_GIVEN
 	, consec.prev_consec_years RECENT_CONSECUTIVE_YEARS
-
+/*
 	, gen_membership.elcn_name MEMBERSHIP_NAME
 	, gen_membership.status_desc MEMBERSHIP_STATUS
 	, gen_membership.elcn_membershipnumber MEMBERSHIP_NUMBER
@@ -598,7 +643,7 @@ SELECT
 	, fan_membership.status_desc FAN_MEMBERSHIP_STATUS
 	, fan_membership.elcn_membershipnumber FAN_MEMBERSHIP_NUMBER
 	, fan_membership.elcn_expiredate FAN_EXPIRATION_DATE
-
+*/
 	, eab.elcn_name EMAIL_PREFERRED_ADDRESS
 	, email_slot.personal PERS_EMAIL
 	, email_slot.nsu NSU_EMAIL
@@ -660,6 +705,8 @@ SELECT
 
 FROM
 	#temp_const CONST
+	JOIN #temp_contributions period_totals 
+		ON const.ContactId = period_totals.elcn_person
 
 	LEFT JOIN(
 		SELECT 
@@ -675,6 +722,7 @@ FROM
 		) AAB 
 		ON const.ContactId = aab.elcn_personId
 		AND aab.rn = 1
+	
 	JOIN #temp_addresses ADDRESSES -- state filtered
 		ON aab.elcn_AddressId = addresses.elcn_addressId  
 	LEFT JOIN elcn_addresstypeBase ATB 
@@ -777,7 +825,7 @@ FROM
 			elcn_ratingtypeid = '3DE9ACBB-37E5-45AF-8902-2314FC2A9538'
 		)RATINGS2 ON const.contactid = ratings2.elcn_personid  
 
-	LEFT JOIN #temp_recognitioncredit recognitioncredit
+	LEFT JOIN #temp_giving_pivot recognitioncredit
 		ON const.ContactId = recognitioncredit.elcn_person
 
 	LEFT JOIN(
@@ -926,12 +974,13 @@ FROM
 		GROUP BY elcn_person 
 	) period_pledge ON const.ContactId = period_pledge.elcn_person
 
-	LEFT JOIN(
+/*	LEFT JOIN(
 		SELECT DISTINCT 
 			elcn_person
 			, SUM(elcn_RecognitionCredit) Total_Giving
 			, SUM(elcn_TotalPremiumFairMarketValue)  Total_Premiums
 			, SUM(elcn_contribution.elcn_marketValue) Total_Fair_Market_Value
+			, COUNT(elcn_RecognitionCredit) Gift_Count
 		FROM
 			elcn_contributiondonorBase
 			JOIN elcn_contribution  
@@ -945,6 +994,9 @@ FROM
 			and elcn_contributiondonorBase.elcn_ContributionDate BETWEEN @p_StartDate AND @p_EndDate
 		GROUP BY elcn_person 
 			)period_totals ON const.ContactId = period_totals.elcn_person
+*/
+
+
 	LEFT JOIN(
 		SELECT DISTINCT 
 			elcn_person
@@ -1042,8 +1094,32 @@ WHERE
 				@p_ignore_academic_years = 'Y'
 		)
 	)
-
+--	AND (period_totals.Gift_Count > 0
+--		OR @p_exclude_nongivers = 'N')
+	--AND(
+	--	EXISTS(
+	--		SELECT
+	--			elcn_person
+	--		FROM
+	--			elcn_contributiondonorBase
+	--			JOIN elcn_contribution  
+	--				ON elcn_contributiondonorBase.elcn_contribution = elcn_contribution.elcn_contributionId
+	--		WHERE
+	--			elcn_contributiondonorBase.elcn_person = const.ContactId
+	--			AND	elcn_contribution.statuscode = 1
+	--			AND elcn_contribution.elcn_contributionType IN (344220000, 
+	--														344220001, 
+	--														344220004, 
+	--														344220005) 
+	--			and elcn_contributiondonorBase.elcn_ContributionDate BETWEEN @p_StartDate AND @p_EndDate
+	--		UNION
+	--		SELECT
+	--			convert(uniqueidentifier,'9D67DD91-B3CA-4AA7-BFCC-49BEE53AF420') x
+	--		WHERE
+	--			@p_exclude_nongivers = 'N'
+	--	)
+	--)
 --and const.Primary_Name like '%Mutzig%'
 --and id in ('N00149607','N00148562','N00005419')
-and const.ContactId = '9D67DD91-B3CA-4AA7-BFCC-49BEE53AF420'
+--and const.ContactId = '9D67DD91-B3CA-4AA7-BFCC-49BEE53AF420'
 ;

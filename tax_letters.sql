@@ -54,6 +54,7 @@ SELECT
 	, SUM(COALESCE(contrib.elcn_PresentValue,0)) sum_aux
 	, SUM(COALESCE(cdb.elcn_softcredit,0)) sum_soft
 	, SUM(COALESCE(cpb.elcn_amount,0)) sum_gik
+	, SUM(COALESCE(cdb.elcn_CampaignValue,0)) sum_campaign_value 
 
 INTO
 	#temp_contributions
@@ -119,6 +120,9 @@ SELECT
 --	, addresses.County
 	, addresses.Nation
 
+--Annual individual giving
+	, COALESCE(this_year.sum_campaign_value,0) Annual_Individual_Giving
+/*
 --Annual HH Giving
 	, COALESCE(this_year.sum_giving,0) + COALESCE(spouse_this_year.sum_giving,0) Annual_HH_Giving
 
@@ -133,11 +137,11 @@ SELECT
 
 --HH GIK
 	, COALESCE(this_year.sum_gik,0) + COALESCE(spouse_this_year.sum_gik,0) HH_GIK
-
+*/
 --Relation Source
-	, spouse_p.FullName Relation
+	, spouse_p.FullName Spouse
 --Relation Source Desc
-	, prt.elcn_type Relationship
+	, prt.elcn_type Relationship_Type
 
 --Combined Mailing Priority
 --Combined Mailing Priority Desc
@@ -145,130 +149,10 @@ SELECT
 		WHEN 1 THEN 'Y'
 		ELSE null
 	END Joint_Mailing
-
---NPH
-	, CASE WHEN(
-			SELECT 1 X
-			WHERE EXISTS(
-				SELECT cpb.elcn_ContactPreferenceTypeId
-				FROM elcn_contactpreferenceBase cpb
-				WHERE 
-					cpb.elcn_ContactPreferenceTypeId = '112A7585-A2D9-E911-80D8-0A253F89019C'
-		 			AND cpb.elcn_ContactRestrictionId = '8872A718-5472-40C4-82C7-DB72FC4CE5A6'
- 					AND (cpb.elcn_RestrictionLiftDate < CURRENT_TIMESTAMP OR cpb.elcn_RestrictionLiftDate IS NULL)
-					AND cpb.elcn_ContactPreferenceStatusId = '378DE114-EB09-E511-943C-0050568068B7' 
-					AND cpb.elcn_MethodofContact = 344220001
-					AND cpb.elcn_personId = cb.ContactId
-				)
-			) IS NOT NULL THEN 'NPH' END AS NPH 
---NOC
-	, CASE WHEN(
-			SELECT 1 X
-			WHERE EXISTS(
-				SELECT cpb.elcn_ContactPreferenceTypeId
-				FROM elcn_contactpreferenceBase cpb
-				WHERE 
-					cpb.elcn_ContactPreferenceTypeId =  '76EA8AA5-2F36-4E8E-BFB2-490677DCF4B4'
-		 			AND cpb.elcn_ContactRestrictionId = '8872A718-5472-40C4-82C7-DB72FC4CE5A6'
- 					AND (cpb.elcn_RestrictionLiftDate < CURRENT_TIMESTAMP OR cpb.elcn_RestrictionLiftDate IS NULL)
-					AND cpb.elcn_ContactPreferenceStatusId = '378DE114-EB09-E511-943C-0050568068B7'
-					AND cpb.elcn_MethodofContact = 344220006
-					AND cpb.elcn_personId = cb.ContactId
-				)
-			) IS NOT NULL THEN 'NOC' END AS NOC 
---NMC
-	, CASE WHEN(
-			SELECT 1 X
-			WHERE EXISTS(
-				SELECT cpb.elcn_ContactPreferenceTypeId
-				FROM elcn_contactpreferenceBase cpb
-				WHERE 
-					cpb.elcn_ContactPreferenceTypeId =  '112A7585-A2D9-E911-80D8-0A253F89019C' 
-		 			AND cpb.elcn_ContactRestrictionId = '8872A718-5472-40C4-82C7-DB72FC4CE5A6' 
- 					AND (cpb.elcn_RestrictionLiftDate < CURRENT_TIMESTAMP OR cpb.elcn_RestrictionLiftDate IS NULL)
-					AND cpb.elcn_ContactPreferenceStatusId = '378DE114-EB09-E511-943C-0050568068B7'
-					AND cpb.elcn_MethodofContact = 344220000 
-					AND cpb.elcn_personId = cb.ContactId
-				)
-			) IS NOT NULL THEN 'NMC' END AS NMC 
---NEM
-	, CASE WHEN(
-			SELECT 1 X
-			WHERE EXISTS(
-				SELECT cpb.elcn_ContactPreferenceTypeId
-				FROM elcn_contactpreferenceBase cpb
-				WHERE 
-					cpb.elcn_ContactPreferenceTypeId =  '112A7585-A2D9-E911-80D8-0A253F89019C' 
-		 			AND cpb.elcn_ContactRestrictionId = '8872A718-5472-40C4-82C7-DB72FC4CE5A6'
- 					AND (cpb.elcn_RestrictionLiftDate < CURRENT_TIMESTAMP OR cpb.elcn_RestrictionLiftDate IS NULL)
-					AND cpb.elcn_ContactPreferenceStatusId = '378DE114-EB09-E511-943C-0050568068B7'
-					AND cpb.elcn_MethodofContact = 344220002 
-					AND cpb.elcn_personId = cb.ContactId
-				)
-			) IS NOT NULL THEN 'NEM' END AS NEM 
---NAM
-	, CASE WHEN(
-			SELECT 1 X
-			WHERE EXISTS(
-				SELECT cpb.elcn_ContactPreferenceTypeId
-				FROM elcn_contactpreferenceBase cpb
-				WHERE 
-					cpb.elcn_ContactPreferenceTypeId =  'EE8CE7BD-9CB8-E911-80D8-0A253F89019C' 
-		 			AND cpb.elcn_ContactRestrictionId = '8872A718-5472-40C4-82C7-DB72FC4CE5A6'
- 					AND (cpb.elcn_RestrictionLiftDate < CURRENT_TIMESTAMP OR cpb.elcn_RestrictionLiftDate IS NULL)
-					AND cpb.elcn_ContactPreferenceStatusId = '378DE114-EB09-E511-943C-0050568068B7' 
-					AND cpb.elcn_MethodofContact = 344220000
-					AND cpb.elcn_personId = cb.ContactId
-				)
-			) IS NOT NULL THEN 'NAM' END AS NAM 
---NDN
-	, CASE WHEN(
-			SELECT 1 X
-			WHERE EXISTS(
-				SELECT cpb.elcn_ContactPreferenceTypeId
-				FROM elcn_contactpreferenceBase cpb
-				WHERE 
-					cpb.elcn_ContactPreferenceTypeId = 'e4e02dc6-3314-e511-9431-005056804b43'
-		 			AND cpb.elcn_ContactRestrictionId = '8872A718-5472-40C4-82C7-DB72FC4CE5A6'
- 					AND (cpb.elcn_RestrictionLiftDate < CURRENT_TIMESTAMP OR cpb.elcn_RestrictionLiftDate IS NULL)
-					AND cpb.elcn_ContactPreferenceStatusId = '378DE114-EB09-E511-943C-0050568068B7' 
-					AND cpb.elcn_MethodofContact = 344220006 
-					AND cpb.elcn_personId = cb.ContactId
-				)
-			) IS NOT NULL THEN 'NDN' END AS NDN 
---NAK
-	, CASE WHEN(
-			SELECT 1 X
-			WHERE EXISTS(
-				SELECT cpb.elcn_ContactPreferenceTypeId
-				FROM elcn_contactpreferenceBase cpb
-				WHERE 
-					cpb.elcn_ContactPreferenceTypeId = 'DEE02DC6-3314-E511-9431-005056804B43' 
-		 			AND cpb.elcn_ContactRestrictionId = '8872A718-5472-40C4-82C7-DB72FC4CE5A6'
- 					AND (cpb.elcn_RestrictionLiftDate < CURRENT_TIMESTAMP OR cpb.elcn_RestrictionLiftDate IS NULL)
-					AND cpb.elcn_ContactPreferenceStatusId = '378DE114-EB09-E511-943C-0050568068B7' 
-					AND cpb.elcn_MethodofContact = 344220000 
-					AND cpb.elcn_personId = cb.ContactId
-				)
-			) IS NOT NULL THEN 'NAK' END AS NAK
---NTP
-	, CASE WHEN(
-			SELECT 1 X
-			WHERE EXISTS(
-				SELECT cpb.elcn_ContactPreferenceTypeId
-				FROM elcn_contactpreferenceBase cpb
-				WHERE 
-		 			cpb.elcn_ContactRestrictionId = '3E4E206F-9EB8-E911-80D8-0A253F89019C' 
- 					AND (cpb.elcn_RestrictionLiftDate < CURRENT_TIMESTAMP OR cpb.elcn_RestrictionLiftDate IS NULL)
-					AND cpb.elcn_ContactPreferenceStatusId = '378DE114-EB09-E511-943C-0050568068B7' 
-					AND cpb.elcn_personId = cb.ContactId
-				)
-			) IS NOT NULL THEN 'NTP' END AS NTP
-
---Gift Vehicle
---Gift Vehicle Desc
---	, contrib.Gift_Vehicle
-
+	, CASE spouse_p.elcn_persontype
+		WHEN 344220000 THEN 'Constituent'
+		WHEN 344220001 THEN 'Non-constituent'
+	END Spouse_Status
 
 --end of report
 --select * from #temp_contributions where elcn_person = '626F9310-DC46-4E08-9EA7-A6BA8D2DE65B';
@@ -279,7 +163,8 @@ FROM(
 	FROM 
 		#temp_contributions
 	WHERE
-		fy = @p_fy 
+		fy = @p_fy
+		AND sum_campaign_value > 0
 	)contrib
 
 	LEFT JOIN(
@@ -289,11 +174,12 @@ FROM(
 			, sum_aux
 			, sum_soft
 			, sum_gik
+			, sum_campaign_value
 		FROM #temp_contributions
 		WHERE fy = @p_fy
 	) this_year
 		ON contrib.elcn_person = this_year.elcn_person
-
+/*
 	LEFT JOIN(
 		SELECT
 			elcn_person
@@ -305,7 +191,7 @@ FROM(
 		WHERE fy = @p_fy -1
 	) last_year
 		ON contrib.elcn_person = last_year.elcn_person
-
+*/
 	LEFT JOIN contactbase cb
 		on contrib.elcn_person = cb.contactid
 	LEFT JOIN elcn_constituentaffiliationBase cab 
@@ -381,7 +267,7 @@ FROM(
 		ON spouse_link.elcn_RelationshipType1Id  = prt.elcn_personalrelationshiptypeid 
 	LEFT JOIN ContactBase spouse_p 
 		ON spouse_link.elcn_Person2Id = spouse_p.ContactId
-
+/*
 	LEFT JOIN(
 		SELECT
 			elcn_person
@@ -405,7 +291,7 @@ FROM(
 		WHERE fy = @p_fy -1
 	) spouse_last_year
 		ON spouse_link.elcn_Person2Id = spouse_last_year.elcn_person
-
+*/
 	LEFT JOIN(
 		SELECT 
 			aab.*

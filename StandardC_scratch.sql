@@ -1404,4 +1404,49 @@ and elcn_person = '9D67DD91-B3CA-4AA7-BFCC-49BEE53AF420'
 GROUP BY elcn_person 
 -- lifetime_totals
 
+DECLARE @p_StartDate date = '1/1/1900', @p_EndDate date = '12/31/2020', @p_exclude_nongivers varchar(1) = 'N';
+select count(elcn_recognitioncredt)
 
+
+SELECT --top 10
+				elcn_person
+				, elcn_RecognitionCredit
+				, elcn_contributiondonorBase.elcn_ContributionDate
+				
+			FROM
+				elcn_contributiondonorBase
+				JOIN elcn_contribution  
+					ON elcn_contributiondonorBase.elcn_contribution = elcn_contribution.elcn_contributionId
+			WHERE
+				--elcn_contributiondonorBase.elcn_person = const.ContactId
+					elcn_contribution.statuscode = 1
+				AND elcn_contribution.elcn_contributionType IN (344220000, 
+															344220001, 
+															344220004, 
+															344220005) 
+				and elcn_contributiondonorBase.elcn_ContributionDate BETWEEN @p_StartDate AND @p_EndDate
+
+UNION
+SELECT 
+	convert(uniqueidentifier,'9D67DD91-B3CA-4AA7-BFCC-49BEE53AF420') x
+	, @p_StartDate
+WHERE 
+	@p_exclude_nongivers = 'N'
+;
+select top 1 * from elcn_contributionBase;
+
+DECLARE @p_StartDate date = '1/1/1900', @p_EndDate date = '12/31/2020', @p_exclude_nongivers varchar(1) = 'N';
+		SELECT
+			* --COUNT(elcn_RecognitionCredit)
+		FROM
+			elcn_contributiondonorBase
+			JOIN elcn_contribution  
+				ON elcn_contributiondonorBase.elcn_contribution = elcn_contribution.elcn_contributionId
+		WHERE
+			elcn_contributiondonorBase.elcn_person = '841B663B-4EC5-44E7-AC76-0CB81A67C280'
+			AND elcn_contribution.statuscode = 1
+			AND elcn_contribution.elcn_contributionType IN (344220000, 
+															344220001, 
+															344220004, 
+															344220005) 
+			and elcn_contributiondonorBase.elcn_ContributionDate BETWEEN @p_StartDate AND @p_EndDate

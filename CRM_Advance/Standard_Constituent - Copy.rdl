@@ -21,8 +21,14 @@
           <QueryParameter Name="@p_stateList">
             <Value>=Parameters!p_stateList.Value</Value>
           </QueryParameter>
+          <QueryParameter Name="@p_EndDate">
+            <Value>=Parameters!p_EndDate.Value</Value>
+          </QueryParameter>
           <QueryParameter Name="@p_activities">
             <Value>=Parameters!p_activities.Value</Value>
+          </QueryParameter>
+          <QueryParameter Name="@p_StartDate">
+            <Value>=Parameters!p_StartDate.Value</Value>
           </QueryParameter>
           <QueryParameter Name="@p_ignore_activities">
             <Value>=Parameters!p_ignore_activities.Value</Value>
@@ -33,8 +39,11 @@
           <QueryParameter Name="@p_ignore_academic_years">
             <Value>=Parameters!p_ignore_academic_years.Value</Value>
           </QueryParameter>
+          <QueryParameter Name="@p_exclude_nongivers">
+            <Value>=Parameters!p_exclude_nongivers.Value</Value>
+          </QueryParameter>
         </QueryParameters>
-        <CommandText>DECLARE @p_StartDate date, @p_EndDate date;
+        <CommandText>
 SELECT
 	cb.contactid
 	, CASE
@@ -1017,6 +1026,29 @@ WHERE
 				1 x
 			WHERE
 				@p_ignore_academic_years = 'Y'
+		)
+	)
+	AND(
+		EXISTS(
+			SELECT
+				elcn_person
+			FROM
+				elcn_contributiondonorBase
+				JOIN elcn_contribution  
+					ON elcn_contributiondonorBase.elcn_contribution = elcn_contribution.elcn_contributionId
+			WHERE
+				elcn_contributiondonorBase.elcn_person = const.ContactId
+				AND	elcn_contribution.statuscode = 1
+				AND elcn_contribution.elcn_contributionType IN (344220000, 
+															344220001, 
+															344220004, 
+															344220005) 
+				and elcn_contributiondonorBase.elcn_ContributionDate BETWEEN @p_StartDate AND @p_EndDate
+			UNION
+			SELECT
+				convert(uniqueidentifier,'9D67DD91-B3CA-4AA7-BFCC-49BEE53AF420') x
+			WHERE
+				@p_exclude_nongivers = 'N'
 		)
 	)
 
@@ -8509,6 +8541,27 @@ OPTION (MAXRECURSION 200);</CommandText>
       </ValidValues>
       <MultiValue>true</MultiValue>
     </ReportParameter>
+    <ReportParameter Name="p_exclude_nongivers">
+      <DataType>String</DataType>
+      <DefaultValue>
+        <Values>
+          <Value>N</Value>
+        </Values>
+      </DefaultValue>
+      <Prompt>Excluded anyone who did not contribute during period?</Prompt>
+      <ValidValues>
+        <ParameterValues>
+          <ParameterValue>
+            <Value>Y</Value>
+            <Label>Y</Label>
+          </ParameterValue>
+          <ParameterValue>
+            <Value>N</Value>
+            <Label>N</Label>
+          </ParameterValue>
+        </ParameterValues>
+      </ValidValues>
+    </ReportParameter>
   </ReportParameters>
   <ReportParametersLayout>
     <GridLayoutDefinition>
@@ -8554,6 +8607,11 @@ OPTION (MAXRECURSION 200);</CommandText>
           <ColumnIndex>3</ColumnIndex>
           <RowIndex>2</RowIndex>
           <ParameterName>p_academic_years</ParameterName>
+        </CellDefinition>
+        <CellDefinition>
+          <ColumnIndex>0</ColumnIndex>
+          <RowIndex>3</RowIndex>
+          <ParameterName>p_exclude_nongivers</ParameterName>
         </CellDefinition>
       </CellDefinitions>
     </GridLayoutDefinition>
