@@ -1450,3 +1450,49 @@ DECLARE @p_StartDate date = '1/1/1900', @p_EndDate date = '12/31/2020', @p_exclu
 															344220004, 
 															344220005) 
 			and elcn_contributiondonorBase.elcn_ContributionDate BETWEEN @p_StartDate AND @p_EndDate
+;
+select distinct elcn_ContactPreferenceStatusId from elcn_contactpreferenceBase -- count 5660
+select * from (
+SELECT
+
+	 CASE cpb.elcn_ContactRestrictionID 
+		WHEN '8872A718-5472-40C4-82C7-DB72FC4CE5A6' THEN
+			CASE elcn_ContactPreferenceTypeId
+				WHEN  '112A7585-A2D9-E911-80D8-0A253F89019C' THEN
+					CASE elcn_MethodofContact
+						WHEN 344220001 THEN 
+							'NPH'
+						WHEN 344220000 THEN 
+							'NMC'
+						WHEN 344220002 THEN 
+							'NEM'
+					END
+				WHEN '76EA8AA5-2F36-4E8E-BFB2-490677DCF4B4' THEN
+					CASE WHEN elcn_MethodofContact = 344220006 THEN 'NOC' END
+				WHEN 'EE8CE7BD-9CB8-E911-80D8-0A253F89019C' THEN
+					CASE WHEN elcn_MethodofContact = 344220000 THEN 'NAM' END
+				WHEN 'e4e02dc6-3314-e511-9431-005056804b43' THEN
+					CASE WHEN elcn_MethodofContact = 344220006 THEN 'NDN' END
+				WHEN 'DEE02DC6-3314-E511-9431-005056804B43' THEN
+					CASE WHEN elcn_MethodofContact = 344220000 THEN 'NAK' END
+			END 
+		WHEN '3E4E206F-9EB8-E911-80D8-0A253F89019C' THEN
+			'NTP'
+	END exclusion_code
+	, cpb.elcn_personid
+FROM
+	elcn_contactpreferenceBase cpb
+WHERE
+	cpb.elcn_ContactPreferenceStatusID = '378DE114-EB09-E511-943C-0050568068B7'
+	AND (cpb.elcn_RestrictionLiftDate < CURRENT_TIMESTAMP OR cpb.elcn_RestrictionLiftDate IS NULL)
+	AND elcn_personid IS NOT NULL
+) T 
+--where t.exclusion_code = 'NPH';
+PIVOT
+(	MAX(exclusion_code)
+	FOR exclusion_code 
+	IN ([NPH], [NOC], [NMC], [NEM], [NAM], [NDN], [NAK], [NTP])
+)PVT
+;
+
+exec sp_columns elcn_contributionbase;
