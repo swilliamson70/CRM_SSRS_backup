@@ -2,7 +2,7 @@
                  
 	 @p_stateList uniqueidentifier = 'E323CFDA-A383-E911-80D7-0A253F89019C' -- TX 'C823CFDA-A383-E911-80D7-0A253F89019C' -- KS 'DC23CFDA-A383-E911-80D7-0A253F89019C' -- ok
 	, @p_zipcodeList varchar(9) = '74331'
-	, @p_county varchar(120)-- not found in CRM data entry in person, prospect pages
+	, @p_county varchar(120) = '' -- not found in CRM data entry in person, prospect pages
 	, @p_cityname varchar(120) = 'Tah' -- dnu/ too expensive
 	, @p_veteran varchar(1)-- not found in CRM data entry
 	, @p_household_ind varchar(1) -- APRXREF_HOUSEHOLD_IND -- flag on xref rec linking people at same address
@@ -28,36 +28,7 @@
 	, @p_ignore_academic_years varchar(1) = 'Y'
 	, @p_exclude_nongivers varchar(1) = 'N'
 	;
-/*
-WITH W_CONTACTID_LIST AS(
-	SELECT 
-		contactid
-	FROM
-		contactbase
-	WHERE
-		(@p_primary_spouse_only = 'N'
-		OR NOT EXISTS ( 
-				SELECT	
-					1 X
-				FROM
-					elcn_personalrelationshipBase prb
-				WHERE
-					(prb.elcn_Person1Id = contactbase.contactid 
-						OR prb.elcn_Person2Id = contactbase.contactid)
-					AND prb.elcn_PrimarySpouseId <> contactbase.contactid 
-					AND prb.elcn_RelationshipType1Id IN ( '42295D4F-A6EE-E411-942F-005056804B43', 
-														'4F665855-A3B8-E911-80D8-0A253F89019C',
-														'62295D4F-A6EE-E411-942F-005056804B43',
-														'43665855-A3B8-E911-80D8-0A253F89019C')	
-					AND elcn_EndDate is null
-					AND statuscode = 1
-			)
-		) AND(
-			@p_include_deceased = 'Y'
-			OR contactbase.elcn_dateofdeath IS NULL
-		)
-)
-*/
+
 DECLARE @p_StartDate date = '01/01/2019', @p_EndDate date = '12/31/2019';
 SELECT
 	cb.contactid
@@ -79,6 +50,7 @@ SELECT
 	, cb.elcn_LargestContributionAmount Largest_Contribution_Amount
 	, cb.elcn_LastContributionDate
 	, cb.elcn_totalGiving Lifetime_Giving
+	, cb.elcn_totalyearsofgiving Lifetime_Total_Years_Giving
 	, cb.elcn_primaryconstituentaffiliationid
 INTO
 	#temp_const
@@ -90,7 +62,7 @@ FROM(
 	WHERE
 		fullname not like '%DO%NOT%USE'
 		AND (@p_include_deceased = 'Y' 
-			OR elcn_PersonStatusId not in ('CF133D0E-4205-4EC8-B3D1-799074F7A72D',
+			OR elcn_PersonStatusId NOT IN ('CF133D0E-4205-4EC8-B3D1-799074F7A72D',
 											'57B3E088-CDD5-4808-9D53-5F530BDCD320',
 											'233C10DC-B283-4C57-866C-52138BF01CEB')
 			)
@@ -157,7 +129,7 @@ SELECT
 	, spb.elcn_Abbreviation  State_Province
 	, ab.elcn_postalcode  Postal_Code
 	, ab.elcn_county	County
-	, dcb.Datatel_name	Nation
+	, dcb.Datatel_abbreviation	Nation
 INTO
 	#temp_addresses
 FROM
@@ -168,8 +140,54 @@ FROM
 		ON dcb.Datatel_countryId = ab.elcn_country		
 WHERE
 	ab.elcn_StateProvinceId in (@p_stateList)
+	AND ab.elcn_county like TRIM(@p_county)+'%'
 ;
 CREATE NONCLUSTERED INDEX INDX_TMP_ADDRID ON #temp_addresses (elcn_addressId);
+
+SELECT * 
+INTO
+	#temp_exclusion_codes
+FROM (
+SELECT
+	cpb.elcn_personid
+	, CASE cpb.elcn_ContactRestrictionID 
+		WHEN '8872A718-5472-40C4-82C7-DB72FC4CE5A6' THEN
+			CASE elcn_ContactPreferenceTypeId
+				WHEN  '112A7585-A2D9-E911-80D8-0A253F89019C' THEN
+					CASE elcn_MethodofContact
+						WHEN 344220001 THEN 
+							'NPH'
+						WHEN 344220000 THEN 
+							'NMC'
+						WHEN 344220002 THEN 
+							'NEM'
+					END
+				WHEN '76EA8AA5-2F36-4E8E-BFB2-490677DCF4B4' THEN
+					CASE WHEN elcn_MethodofContact = 344220006 THEN 'NOC' END
+				WHEN 'EE8CE7BD-9CB8-E911-80D8-0A253F89019C' THEN
+					CASE WHEN elcn_MethodofContact = 344220000 THEN 'NAM' END
+				WHEN 'e4e02dc6-3314-e511-9431-005056804b43' THEN
+					CASE WHEN elcn_MethodofContact = 344220006 THEN 'NDN' END
+				WHEN 'DEE02DC6-3314-E511-9431-005056804B43' THEN
+					CASE WHEN elcn_MethodofContact = 344220000 THEN 'NAK' END
+			END 
+		WHEN '3E4E206F-9EB8-E911-80D8-0A253F89019C' THEN
+			'NTP'
+	END exclusion_code
+FROM
+	elcn_contactpreferenceBase cpb
+WHERE
+	cpb.elcn_ContactPreferenceStatusID = '378DE114-EB09-E511-943C-0050568068B7'
+	AND (cpb.elcn_RestrictionLiftDate < CURRENT_TIMESTAMP OR cpb.elcn_RestrictionLiftDate IS NULL)
+	AND elcn_personid IS NOT NULL
+) T 
+PIVOT
+(	MAX(exclusion_code)
+	FOR exclusion_code 
+	IN ([NPH], [NOC], [NMC], [NEM], [NAM], [NDN], [NAK], [NTP])
+)PVT
+;
+CREATE NONCLUSTERED INDEX INDX_TMP_ID ON #temp_exclusion_codes (elcn_personId);
 
 SELECT 
 	elcn_personid,
@@ -217,46 +235,27 @@ FROM(
 ;
 CREATE NONCLUSTERED INDEX INDX_TMP_ID_RATINGTYPE ON #temp_ratings (elcn_personid, elcn_ratingtypeid);
 
-SELECT DISTINCT
-	elcn_person
-	, Total_Giving
-	, Total_Premiums
-	, Total_Fair_Market_value
-	, Gift_Count
-FROM(
-	SELECT 
-		elcn_person
-		, SUM(elcn_RecognitionCredit) Total_Giving
-		, SUM(elcn_TotalPremiumFairMarketValue)  Total_Premiums
-		, SUM(elcn_contribution.elcn_marketValue) Total_Fair_Market_Value
-		--, null gift_count
-		, COUNT(elcn_RecognitionCredit) Gift_Count
-	FROM
-		elcn_contributiondonorBase
-		JOIN elcn_contribution  
-			ON elcn_contributiondonorBase.elcn_contribution = elcn_contribution.elcn_contributionId
-	WHERE
-		elcn_contribution.statuscode = 1
-		AND elcn_contribution.elcn_contributionType IN (344220000, 
-														344220001, 
-														344220004,
-														344220005) 
-		and elcn_contributiondonorBase.elcn_ContributionDate BETWEEN @p_StartDate AND @p_EndDate
-	GROUP BY elcn_person
-	UNION
-	SELECT 
-		elcn_person
-		, null
-		, null
-		, null
-		, null
-	FROM
-		contributiondonorBase
-	WHERE
-		@p_exclude_givers = 'N'
-	)
+SELECT 
+	cdb.elcn_person
+	, SUM(cdb.elcn_CampaignValue) Total_Giving
+	, SUM(c.elcn_TotalPremiumFairMarketValue)  Total_Premiums
+	, SUM(c.elcn_marketValue) Total_Fair_Market_Value
+	--, null gift_count
+	, COUNT(cdb.elcn_CampaignValue) Gift_Count
 INTO
-#temp_contributions
+	#temp_contributions
+FROM
+	elcn_contributiondonorBase cdb
+	JOIN elcn_contribution c 
+		ON cdb.elcn_contribution = c.elcn_contributionId
+WHERE
+	c.statuscode = 1
+	AND c.elcn_contributiontype IN (344220000, 
+									344220001, 
+									344220004,
+									344220005) 
+	and cdb.elcn_ContributionDate BETWEEN @p_StartDate AND @p_EndDate
+GROUP BY elcn_person
 ;
 CREATE NONCLUSTERED INDEX INDX_TMP_ID on #temp_contributions (elcn_person);
 
@@ -393,15 +392,14 @@ FROM
 	(
 	SELECT
 		cdb.elcn_person 
-		, cdb.elcn_RecognitionCredit
+		, cdb.elcn_CampaignValue
 		, datepart(YYYY,@p_EndDate) - datepart(YYYY,cdb.elcn_ContributionDate) contrib_year
 	FROM
 		elcn_contributiondonorBase cdb
 		JOIN elcn_contribution contrib 
 			ON cdb.elcn_contribution = contrib.elcn_contributionId
 	WHERE
-		cdb.elcn_person = '9D67DD91-B3CA-4AA7-BFCC-49BEE53AF420' --const.ContactId
-		AND contrib.statuscode = 1
+		contrib.statuscode = 1
 		AND contrib.elcn_contributionType IN (344220000, 
 											  344220001, 
 											  344220004,
@@ -409,38 +407,12 @@ FROM
 		AND cdb.elcn_ContributionDate <= @p_EndDate
 
 	)T PIVOT
-	(	SUM(elcn_recognitioncredit)
+	(	SUM(elcn_CampaignValue)
 		FOR contrib_year
 		IN ([0], [1], [2], [3], [4])
 	)PVT;
 
 CREATE NONCLUSTERED INDEX INDX_TMP_ID ON #temp_giving_pivot (elcn_person);
-
-SELECT DISTINCT  
-	elcn_person personid,
-	datepart(YYYY,elcn_ContributionDate)givingyear
-INTO
-	#temp_dontations
-FROM
-	elcn_contributiondonorBase
-WHERE 
-	elcn_ContributionDate <= @p_EndDate
-;
-
-with w_get_consec_years AS ( 
-	select personid,
-		givingyear,
-		1 consecyears
-	from #temp_dontations
-	union all
-	select d.personid,
-	d.givingyear,
-	cte.consecyears +1 consecyears
-	from #temp_dontations d 
-		join w_get_consec_years cte
-			on cte.personid = d.personid
-			and d.givingyear -1 = cte.givingyear
-)
 
 SELECT
 	const.ContactId
@@ -468,126 +440,16 @@ SELECT
 	, addresses.County
 	, addresses.Nation
 
-	, atb.elcn_type AS Preferred_Address_Type 
-/*
-	, CASE WHEN(
-			SELECT 1 X
-			WHERE EXISTS(
-				SELECT cpb.elcn_ContactPreferenceTypeId
-				FROM elcn_contactpreferenceBase cpb
-				WHERE 
-					cpb.elcn_ContactPreferenceTypeId = '112A7585-A2D9-E911-80D8-0A253F89019C'
-		 			AND cpb.elcn_ContactRestrictionId = '8872A718-5472-40C4-82C7-DB72FC4CE5A6'
- 					AND (cpb.elcn_RestrictionLiftDate < CURRENT_TIMESTAMP OR cpb.elcn_RestrictionLiftDate IS NULL)
-					AND cpb.elcn_ContactPreferenceStatusId = '378DE114-EB09-E511-943C-0050568068B7' 
-					AND cpb.elcn_MethodofContact = 344220001
-					AND cpb.elcn_personId = const.ContactId
-				)
-			) IS NOT NULL THEN 'NPH' END AS NPH 
+	, atb.elcn_type AS Preferred_Address_Type
+	, exclusion_codes.NPH
+	, exclusion_codes.NOC
+	, exclusion_codes.NMC
+	, exclusion_codes.NEM
+	, exclusion_codes.NAM
+	, exclusion_codes.NDN
+	, exclusion_codes.NAK
+	, exclusion_codes.NTP
 
-	, CASE WHEN(
-			SELECT 1 X
-			WHERE EXISTS(
-				SELECT cpb.elcn_ContactPreferenceTypeId
-				FROM elcn_contactpreferenceBase cpb
-				WHERE 
-					cpb.elcn_ContactPreferenceTypeId =  '76EA8AA5-2F36-4E8E-BFB2-490677DCF4B4'
-		 			AND cpb.elcn_ContactRestrictionId = '8872A718-5472-40C4-82C7-DB72FC4CE5A6'
- 					AND (cpb.elcn_RestrictionLiftDate < CURRENT_TIMESTAMP OR cpb.elcn_RestrictionLiftDate IS NULL)
-					AND cpb.elcn_ContactPreferenceStatusId = '378DE114-EB09-E511-943C-0050568068B7'
-					AND cpb.elcn_MethodofContact = 344220006
-					AND cpb.elcn_personId = const.ContactId
-				)
-			) IS NOT NULL THEN 'NOC' END AS NOC 
-
-	, CASE WHEN(
-			SELECT 1 X
-			WHERE EXISTS(
-				SELECT cpb.elcn_ContactPreferenceTypeId
-				FROM elcn_contactpreferenceBase cpb
-				WHERE 
-					cpb.elcn_ContactPreferenceTypeId =  '112A7585-A2D9-E911-80D8-0A253F89019C' 
-		 			AND cpb.elcn_ContactRestrictionId = '8872A718-5472-40C4-82C7-DB72FC4CE5A6' 
- 					AND (cpb.elcn_RestrictionLiftDate < CURRENT_TIMESTAMP OR cpb.elcn_RestrictionLiftDate IS NULL)
-					AND cpb.elcn_ContactPreferenceStatusId = '378DE114-EB09-E511-943C-0050568068B7'
-					AND cpb.elcn_MethodofContact = 344220000 
-					AND cpb.elcn_personId = const.ContactId
-				)
-			) IS NOT NULL THEN 'NMC' END AS NMC 
-
-	, CASE WHEN(
-			SELECT 1 X
-			WHERE EXISTS(
-				SELECT cpb.elcn_ContactPreferenceTypeId
-				FROM elcn_contactpreferenceBase cpb
-				WHERE 
-					cpb.elcn_ContactPreferenceTypeId =  '112A7585-A2D9-E911-80D8-0A253F89019C' 
-		 			AND cpb.elcn_ContactRestrictionId = '8872A718-5472-40C4-82C7-DB72FC4CE5A6'
- 					AND (cpb.elcn_RestrictionLiftDate < CURRENT_TIMESTAMP OR cpb.elcn_RestrictionLiftDate IS NULL)
-					AND cpb.elcn_ContactPreferenceStatusId = '378DE114-EB09-E511-943C-0050568068B7'
-					AND cpb.elcn_MethodofContact = 344220002 
-					AND cpb.elcn_personId = const.ContactId
-				)
-			) IS NOT NULL THEN 'NEM' END AS NEM 
-
-	, CASE WHEN(
-			SELECT 1 X
-			WHERE EXISTS(
-				SELECT cpb.elcn_ContactPreferenceTypeId
-				FROM elcn_contactpreferenceBase cpb
-				WHERE 
-					cpb.elcn_ContactPreferenceTypeId =  'EE8CE7BD-9CB8-E911-80D8-0A253F89019C' 
-		 			AND cpb.elcn_ContactRestrictionId = '8872A718-5472-40C4-82C7-DB72FC4CE5A6'
- 					AND (cpb.elcn_RestrictionLiftDate < CURRENT_TIMESTAMP OR cpb.elcn_RestrictionLiftDate IS NULL)
-					AND cpb.elcn_ContactPreferenceStatusId = '378DE114-EB09-E511-943C-0050568068B7' 
-					AND cpb.elcn_MethodofContact = 344220000
-					AND cpb.elcn_personId = const.ContactId
-				)
-			) IS NOT NULL THEN 'NAM' END AS NAM 
-
-	, CASE WHEN(
-			SELECT 1 X
-			WHERE EXISTS(
-				SELECT cpb.elcn_ContactPreferenceTypeId
-				FROM elcn_contactpreferenceBase cpb
-				WHERE 
-					cpb.elcn_ContactPreferenceTypeId = 'e4e02dc6-3314-e511-9431-005056804b43'
-		 			AND cpb.elcn_ContactRestrictionId = '8872A718-5472-40C4-82C7-DB72FC4CE5A6'
- 					AND (cpb.elcn_RestrictionLiftDate < CURRENT_TIMESTAMP OR cpb.elcn_RestrictionLiftDate IS NULL)
-					AND cpb.elcn_ContactPreferenceStatusId = '378DE114-EB09-E511-943C-0050568068B7' 
-					AND cpb.elcn_MethodofContact = 344220006 
-					AND cpb.elcn_personId = const.ContactId
-				)
-			) IS NOT NULL THEN 'NDN' END AS NDN 
-
-	, CASE WHEN(
-			SELECT 1 X
-			WHERE EXISTS(
-				SELECT cpb.elcn_ContactPreferenceTypeId
-				FROM elcn_contactpreferenceBase cpb
-				WHERE 
-					cpb.elcn_ContactPreferenceTypeId = 'DEE02DC6-3314-E511-9431-005056804B43' 
-		 			AND cpb.elcn_ContactRestrictionId = '8872A718-5472-40C4-82C7-DB72FC4CE5A6'
- 					AND (cpb.elcn_RestrictionLiftDate < CURRENT_TIMESTAMP OR cpb.elcn_RestrictionLiftDate IS NULL)
-					AND cpb.elcn_ContactPreferenceStatusId = '378DE114-EB09-E511-943C-0050568068B7' 
-					AND cpb.elcn_MethodofContact = 344220000 
-					AND cpb.elcn_personId = const.ContactId
-				)
-			) IS NOT NULL THEN 'NAK' END AS NAK
-
-	, CASE WHEN(
-			SELECT 1 X
-			WHERE EXISTS(
-				SELECT cpb.elcn_ContactPreferenceTypeId
-				FROM elcn_contactpreferenceBase cpb
-				WHERE 
-		 			cpb.elcn_ContactRestrictionId = '3E4E206F-9EB8-E911-80D8-0A253F89019C' 
- 					AND (cpb.elcn_RestrictionLiftDate < CURRENT_TIMESTAMP OR cpb.elcn_RestrictionLiftDate IS NULL)
-					AND cpb.elcn_ContactPreferenceStatusId = '378DE114-EB09-E511-943C-0050568068B7' 
-					AND cpb.elcn_personId = const.ContactId
-				)
-			) IS NOT NULL THEN 'NTP' END AS NTP
-*/
 	, const.anonymityType Anonymity_Type
 
 	, jfsg_est_cap.value JFSG_Estimated_Capacity
@@ -600,35 +462,17 @@ SELECT
 	, ratings2.rating_value RATING2
 	, ratings2.rating_level RATING_LEVEL2
 
-	--, (
-	--	SELECT
-	--		COUNT(elcn_RecognitionCredit)
-	--	FROM
-	--		elcn_contributiondonorBase
-	--		JOIN elcn_contribution  
-	--			ON elcn_contributiondonorBase.elcn_contribution = elcn_contribution.elcn_contributionId
-	--	WHERE
-	--		elcn_contributiondonorBase.elcn_person = const.ContactId
-	--		AND elcn_contribution.statuscode = 1
-	--		AND elcn_contribution.elcn_contributionType IN (344220000, 
-	--														344220001, 
-	--														344220004, 
-	--														344220005) 
-	--		and elcn_contributiondonorBase.elcn_ContributionDate BETWEEN @p_StartDate AND @p_EndDate
-	--	) 
+	, const.Largest_Contribution_Amount Largest_Lifetime_Contribution
+	, CONVERT(VARCHAR,const.elcn_LastContributionDate,101) Last_Lifetime_Contibution_Date
+	, const.Lifetime_Total_Years_Giving 
+
 	, period_totals.Gift_Count Number_of_Gifts_For_Period
 
-	, const.Largest_Contribution_Amount 
-	, CONVERT(VARCHAR,const.elcn_LastContributionDate,101) Last_Contibution_Date 
+	, giving_pivot.YTD Campaign_Value_YTD_for_Period
+	, giving_pivot.Year1 Campaign_Value_Year2
+	, giving_pivot.Year2 Campaign_Value_Year3
+	, giving_pivot.Year3 Campaign_Value_Year4
 
-	, recognitioncredit.YTD Gifts_YTD
-	, recognitioncredit.Year1 Gifts_Year2
-	, recognitioncredit.Year2 Gifts_Year3
-	, recognitioncredit.Year3 Gifts_Year4
-	
-	, longest_consec.longest_consec_years  LONGEST_CONS_YEARS_GIVEN
-	, consec.prev_consec_years RECENT_CONSECUTIVE_YEARS
-/*
 	, gen_membership.elcn_name MEMBERSHIP_NAME
 	, gen_membership.status_desc MEMBERSHIP_STATUS
 	, gen_membership.elcn_membershipnumber MEMBERSHIP_NUMBER
@@ -643,7 +487,7 @@ SELECT
 	, fan_membership.status_desc FAN_MEMBERSHIP_STATUS
 	, fan_membership.elcn_membershipnumber FAN_MEMBERSHIP_NUMBER
 	, fan_membership.elcn_expiredate FAN_EXPIRATION_DATE
-*/
+
 	, eab.elcn_name EMAIL_PREFERRED_ADDRESS
 	, email_slot.personal PERS_EMAIL
 	, email_slot.nsu NSU_EMAIL
@@ -705,7 +549,7 @@ SELECT
 
 FROM
 	#temp_const CONST
-	JOIN #temp_contributions period_totals 
+	LEFT JOIN #temp_contributions period_totals 
 		ON const.ContactId = period_totals.elcn_person
 
 	LEFT JOIN(
@@ -727,6 +571,9 @@ FROM
 		ON aab.elcn_AddressId = addresses.elcn_addressId  
 	LEFT JOIN elcn_addresstypeBase ATB 
 		ON  aab.elcn_AddressTypeId = atb.elcn_addresstypeId
+
+	LEFT JOIN #temp_exclusion_codes exclusion_codes
+		ON const.ContactId = exclusion_codes.elcn_personid
 
 	LEFT JOIN(
 		SELECT
@@ -825,34 +672,8 @@ FROM
 			elcn_ratingtypeid = '3DE9ACBB-37E5-45AF-8902-2314FC2A9538'
 		)RATINGS2 ON const.contactid = ratings2.elcn_personid  
 
-	LEFT JOIN #temp_giving_pivot recognitioncredit
-		ON const.ContactId = recognitioncredit.elcn_person
-
-	LEFT JOIN(
-		SELECT
-			personid,
-			consecyears PREV_CONSEC_YEARS
-		FROM
-			(
-				SELECT 
-					personid
-					, givingyear
-					, consecyears
-					, ROW_NUMBER() OVER (PARTITION BY personid ORDER BY givingyear DESC, consecyears DESC) RN
-				FROM
-					w_get_consec_years
-			) T
-		WHERE 
-			rn = 1
-		)CONSEC ON const.contactid = consec.personid 
-	LEFT JOIN(
-		SELECT
-			personid,
-			MAX(consecyears) LONGEST_CONSEC_YEARS
-		FROM
-			w_get_consec_years
-		GROUP BY personid
-		)LONGEST_CONSEC on const.contactid = longest_consec.personid
+	LEFT JOIN #temp_giving_pivot giving_pivot
+		ON const.ContactId = giving_pivot.elcn_person
 
 	LEFT JOIN(
 		SELECT
@@ -974,28 +795,6 @@ FROM
 		GROUP BY elcn_person 
 	) period_pledge ON const.ContactId = period_pledge.elcn_person
 
-/*	LEFT JOIN(
-		SELECT DISTINCT 
-			elcn_person
-			, SUM(elcn_RecognitionCredit) Total_Giving
-			, SUM(elcn_TotalPremiumFairMarketValue)  Total_Premiums
-			, SUM(elcn_contribution.elcn_marketValue) Total_Fair_Market_Value
-			, COUNT(elcn_RecognitionCredit) Gift_Count
-		FROM
-			elcn_contributiondonorBase
-			JOIN elcn_contribution  
-				ON elcn_contributiondonorBase.elcn_contribution = elcn_contribution.elcn_contributionId
-		WHERE
-			elcn_contribution.statuscode = 1
-			AND elcn_contribution.elcn_contributionType IN (344220000, 
-															344220001, 
-															344220004,
-															344220005) 
-			and elcn_contributiondonorBase.elcn_ContributionDate BETWEEN @p_StartDate AND @p_EndDate
-		GROUP BY elcn_person 
-			)period_totals ON const.ContactId = period_totals.elcn_person
-*/
-
 
 	LEFT JOIN(
 		SELECT DISTINCT 
@@ -1094,31 +893,9 @@ WHERE
 				@p_ignore_academic_years = 'Y'
 		)
 	)
---	AND (period_totals.Gift_Count > 0
---		OR @p_exclude_nongivers = 'N')
-	--AND(
-	--	EXISTS(
-	--		SELECT
-	--			elcn_person
-	--		FROM
-	--			elcn_contributiondonorBase
-	--			JOIN elcn_contribution  
-	--				ON elcn_contributiondonorBase.elcn_contribution = elcn_contribution.elcn_contributionId
-	--		WHERE
-	--			elcn_contributiondonorBase.elcn_person = const.ContactId
-	--			AND	elcn_contribution.statuscode = 1
-	--			AND elcn_contribution.elcn_contributionType IN (344220000, 
-	--														344220001, 
-	--														344220004, 
-	--														344220005) 
-	--			and elcn_contributiondonorBase.elcn_ContributionDate BETWEEN @p_StartDate AND @p_EndDate
-	--		UNION
-	--		SELECT
-	--			convert(uniqueidentifier,'9D67DD91-B3CA-4AA7-BFCC-49BEE53AF420') x
-	--		WHERE
-	--			@p_exclude_nongivers = 'N'
-	--	)
-	--)
+	AND (period_totals.Gift_Count > 0
+		OR @p_exclude_nongivers = 'N')
+
 --and const.Primary_Name like '%Mutzig%'
 --and id in ('N00149607','N00148562','N00005419')
 --and const.ContactId = '9D67DD91-B3CA-4AA7-BFCC-49BEE53AF420'
