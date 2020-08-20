@@ -96,7 +96,8 @@ FROM
 		ON dcb.Datatel_countryId = ab.elcn_country		
 ;
 CREATE NONCLUSTERED INDEX INDX_TMP_ADDRID ON #temp_addresses (elcn_addressId);
---select * from #temp_addresses where elcn_addressid = '652BADE8-8C19-4129-AF87-BFBF23513344'
+
+--DECLARE @p_year nvarchar(4) = '2019';
 
 SELECT
 	db.elcn_code					AS	Designation
@@ -111,11 +112,13 @@ SELECT
 	, donor.elcn_SortName				Designation_Contact_Name
 	, drtb.elcn_type					Designation_Relationship
 --	, casualjoint_salu.elcn_personid
-	, casualjoint_salu.elcn_formattedname	MAILING_First_Name
+	, COALESCE(casualjoint_salu.elcn_formattedname
+				, casualsingle_salu.elcn_formattedname)	MAILING_First_Name
 	, CASE 
 		WHEN donor.datatel_enterprisesystemid IS NULL THEN 
 			donor_org.elcn_name
-		ELSE mailingjoint_salu.elcn_formattedname
+		ELSE COALESCE(mailingjoint_salu.elcn_formattedname
+					, mailingsingle_salu.elcn_formattedname) 
 	END MAILING_Full_Name
 
 --	, donor.contactid 
@@ -194,6 +197,12 @@ FROM
 	LEFT JOIN #temp_aprsalu MAILINGJOINT_SALU
 		ON  donor.contactid = mailingjoint_salu.elcn_personid
 		AND mailingjoint_salu.salu_code = 'CIFE'
+	LEFT JOIN #temp_aprsalu   casualsingle_salu
+		ON  donor.contactid = casualsingle_salu.elcn_personid
+		AND casualsingle_salu.salu_code = 'SIFL'
+	LEFT JOIN #temp_aprsalu MAILINGSINGLE_SALU
+		ON  donor.contactid = mailingsingle_salu.elcn_personid
+		AND mailingsingle_salu.salu_code = 'SIFE'
 
 	LEFT JOIN elcn_addressassociationBase aab 
 		ON donor.ContactId = aab.elcn_personId 
@@ -363,7 +372,52 @@ ORDER BY
             <TablixBody>
               <TablixColumns>
                 <TablixColumn>
+                  <Width>0.86458in</Width>
+                </TablixColumn>
+                <TablixColumn>
+                  <Width>4.95833in</Width>
+                </TablixColumn>
+                <TablixColumn>
+                  <Width>1.55208in</Width>
+                </TablixColumn>
+                <TablixColumn>
+                  <Width>3.03125in</Width>
+                </TablixColumn>
+                <TablixColumn>
+                  <Width>2.44792in</Width>
+                </TablixColumn>
+                <TablixColumn>
+                  <Width>1.57292in</Width>
+                </TablixColumn>
+                <TablixColumn>
+                  <Width>2.40625in</Width>
+                </TablixColumn>
+                <TablixColumn>
+                  <Width>2in</Width>
+                </TablixColumn>
+                <TablixColumn>
+                  <Width>2in</Width>
+                </TablixColumn>
+                <TablixColumn>
+                  <Width>1.36458in</Width>
+                </TablixColumn>
+                <TablixColumn>
                   <Width>1in</Width>
+                </TablixColumn>
+                <TablixColumn>
+                  <Width>1.4375in</Width>
+                </TablixColumn>
+                <TablixColumn>
+                  <Width>1in</Width>
+                </TablixColumn>
+                <TablixColumn>
+                  <Width>2in</Width>
+                </TablixColumn>
+                <TablixColumn>
+                  <Width>2in</Width>
+                </TablixColumn>
+                <TablixColumn>
+                  <Width>6.91667in</Width>
                 </TablixColumn>
                 <TablixColumn>
                   <Width>1in</Width>
@@ -387,52 +441,7 @@ ORDER BY
                   <Width>1in</Width>
                 </TablixColumn>
                 <TablixColumn>
-                  <Width>1in</Width>
-                </TablixColumn>
-                <TablixColumn>
-                  <Width>1in</Width>
-                </TablixColumn>
-                <TablixColumn>
-                  <Width>1in</Width>
-                </TablixColumn>
-                <TablixColumn>
-                  <Width>1in</Width>
-                </TablixColumn>
-                <TablixColumn>
-                  <Width>1in</Width>
-                </TablixColumn>
-                <TablixColumn>
-                  <Width>1in</Width>
-                </TablixColumn>
-                <TablixColumn>
-                  <Width>1in</Width>
-                </TablixColumn>
-                <TablixColumn>
-                  <Width>1in</Width>
-                </TablixColumn>
-                <TablixColumn>
-                  <Width>1in</Width>
-                </TablixColumn>
-                <TablixColumn>
-                  <Width>1in</Width>
-                </TablixColumn>
-                <TablixColumn>
-                  <Width>1in</Width>
-                </TablixColumn>
-                <TablixColumn>
-                  <Width>1in</Width>
-                </TablixColumn>
-                <TablixColumn>
-                  <Width>1in</Width>
-                </TablixColumn>
-                <TablixColumn>
-                  <Width>1in</Width>
-                </TablixColumn>
-                <TablixColumn>
-                  <Width>1in</Width>
-                </TablixColumn>
-                <TablixColumn>
-                  <Width>1in</Width>
+                  <Width>1.52083in</Width>
                 </TablixColumn>
                 <TablixColumn>
                   <Width>1in</Width>
@@ -963,7 +972,9 @@ ORDER BY
                                   </Style>
                                 </TextRun>
                               </TextRuns>
-                              <Style />
+                              <Style>
+                                <TextAlign>Center</TextAlign>
+                              </Style>
                             </Paragraph>
                           </Paragraphs>
                           <rd:DefaultName>Textbox81</rd:DefaultName>
@@ -995,7 +1006,9 @@ ORDER BY
                                   </Style>
                                 </TextRun>
                               </TextRuns>
-                              <Style />
+                              <Style>
+                                <TextAlign>Center</TextAlign>
+                              </Style>
                             </Paragraph>
                           </Paragraphs>
                           <rd:DefaultName>Textbox83</rd:DefaultName>
@@ -1027,7 +1040,9 @@ ORDER BY
                                   </Style>
                                 </TextRun>
                               </TextRuns>
-                              <Style />
+                              <Style>
+                                <TextAlign>Center</TextAlign>
+                              </Style>
                             </Paragraph>
                           </Paragraphs>
                           <rd:DefaultName>Textbox85</rd:DefaultName>
@@ -1059,7 +1074,9 @@ ORDER BY
                                   </Style>
                                 </TextRun>
                               </TextRuns>
-                              <Style />
+                              <Style>
+                                <TextAlign>Center</TextAlign>
+                              </Style>
                             </Paragraph>
                           </Paragraphs>
                           <rd:DefaultName>Textbox87</rd:DefaultName>
@@ -1091,7 +1108,9 @@ ORDER BY
                                   </Style>
                                 </TextRun>
                               </TextRuns>
-                              <Style />
+                              <Style>
+                                <TextAlign>Center</TextAlign>
+                              </Style>
                             </Paragraph>
                           </Paragraphs>
                           <rd:DefaultName>Textbox89</rd:DefaultName>
@@ -1123,7 +1142,9 @@ ORDER BY
                                   </Style>
                                 </TextRun>
                               </TextRuns>
-                              <Style />
+                              <Style>
+                                <TextAlign>Center</TextAlign>
+                              </Style>
                             </Paragraph>
                           </Paragraphs>
                           <rd:DefaultName>Textbox91</rd:DefaultName>
@@ -1155,7 +1176,9 @@ ORDER BY
                                   </Style>
                                 </TextRun>
                               </TextRuns>
-                              <Style />
+                              <Style>
+                                <TextAlign>Center</TextAlign>
+                              </Style>
                             </Paragraph>
                           </Paragraphs>
                           <rd:DefaultName>Textbox93</rd:DefaultName>
@@ -1187,7 +1210,9 @@ ORDER BY
                                   </Style>
                                 </TextRun>
                               </TextRuns>
-                              <Style />
+                              <Style>
+                                <TextAlign>Center</TextAlign>
+                              </Style>
                             </Paragraph>
                           </Paragraphs>
                           <rd:DefaultName>Textbox95</rd:DefaultName>
@@ -1219,7 +1244,9 @@ ORDER BY
                                   </Style>
                                 </TextRun>
                               </TextRuns>
-                              <Style />
+                              <Style>
+                                <TextAlign>Center</TextAlign>
+                              </Style>
                             </Paragraph>
                           </Paragraphs>
                           <rd:DefaultName>Textbox97</rd:DefaultName>
@@ -1762,7 +1789,9 @@ ORDER BY
                                   </Style>
                                 </TextRun>
                               </TextRuns>
-                              <Style />
+                              <Style>
+                                <TextAlign>Center</TextAlign>
+                              </Style>
                             </Paragraph>
                           </Paragraphs>
                           <rd:DefaultName>Award_Term</rd:DefaultName>
@@ -1791,10 +1820,13 @@ ORDER BY
                                   <Value>=Fields!Award_Amount.Value</Value>
                                   <Style>
                                     <FontFamily>Arial</FontFamily>
+                                    <Format>0.00;(0.00)</Format>
                                   </Style>
                                 </TextRun>
                               </TextRuns>
-                              <Style />
+                              <Style>
+                                <TextAlign>Right</TextAlign>
+                              </Style>
                             </Paragraph>
                           </Paragraphs>
                           <rd:DefaultName>Award_Amount</rd:DefaultName>
@@ -1858,7 +1890,9 @@ ORDER BY
                                   </Style>
                                 </TextRun>
                               </TextRuns>
-                              <Style />
+                              <Style>
+                                <TextAlign>Right</TextAlign>
+                              </Style>
                             </Paragraph>
                           </Paragraphs>
                           <rd:DefaultName>Shares</rd:DefaultName>
@@ -1887,10 +1921,13 @@ ORDER BY
                                   <Value>=Fields!Book_Value.Value</Value>
                                   <Style>
                                     <FontFamily>Arial</FontFamily>
+                                    <Format>0.00;(0.00)</Format>
                                   </Style>
                                 </TextRun>
                               </TextRuns>
-                              <Style />
+                              <Style>
+                                <TextAlign>Right</TextAlign>
+                              </Style>
                             </Paragraph>
                           </Paragraphs>
                           <rd:DefaultName>Book_Value</rd:DefaultName>
@@ -1919,10 +1956,13 @@ ORDER BY
                                   <Value>=Fields!Distributed_Income.Value</Value>
                                   <Style>
                                     <FontFamily>Arial</FontFamily>
+                                    <Format>0.00;(0.00)</Format>
                                   </Style>
                                 </TextRun>
                               </TextRuns>
-                              <Style />
+                              <Style>
+                                <TextAlign>Right</TextAlign>
+                              </Style>
                             </Paragraph>
                           </Paragraphs>
                           <rd:DefaultName>Distributed_Income</rd:DefaultName>
@@ -1951,10 +1991,13 @@ ORDER BY
                                   <Value>=Fields!Market_Value.Value</Value>
                                   <Style>
                                     <FontFamily>Arial</FontFamily>
+                                    <Format>0.00;(0.00)</Format>
                                   </Style>
                                 </TextRun>
                               </TextRuns>
-                              <Style />
+                              <Style>
+                                <TextAlign>Right</TextAlign>
+                              </Style>
                             </Paragraph>
                           </Paragraphs>
                           <rd:DefaultName>Market_Value</rd:DefaultName>
@@ -1986,7 +2029,9 @@ ORDER BY
                                   </Style>
                                 </TextRun>
                               </TextRuns>
-                              <Style />
+                              <Style>
+                                <TextAlign>Center</TextAlign>
+                              </Style>
                             </Paragraph>
                           </Paragraphs>
                           <rd:DefaultName>Foundation_Fiscal_Year</rd:DefaultName>
@@ -2015,10 +2060,13 @@ ORDER BY
                                   <Value>=Fields!Valuation_Date.Value</Value>
                                   <Style>
                                     <FontFamily>Arial</FontFamily>
+                                    <Format>d</Format>
                                   </Style>
                                 </TextRun>
                               </TextRuns>
-                              <Style />
+                              <Style>
+                                <TextAlign>Right</TextAlign>
+                              </Style>
                             </Paragraph>
                           </Paragraphs>
                           <rd:DefaultName>Valuation_Date</rd:DefaultName>
@@ -2080,7 +2128,7 @@ ORDER BY
             </TablixRowHierarchy>
             <DataSetName>ds_Endowments</DataSetName>
             <Height>0.5in</Height>
-            <Width>25in</Width>
+            <Width>46.07292in</Width>
             <Style>
               <Border>
                 <Style>None</Style>
@@ -2091,7 +2139,7 @@ ORDER BY
         <Height>2in</Height>
         <Style />
       </Body>
-      <Width>25in</Width>
+      <Width>47.57292in</Width>
       <Page>
         <LeftMargin>1in</LeftMargin>
         <RightMargin>1in</RightMargin>

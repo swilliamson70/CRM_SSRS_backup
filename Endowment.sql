@@ -92,11 +92,13 @@ SELECT
 	, donor.elcn_SortName				Designation_Contact_Name
 	, drtb.elcn_type					Designation_Relationship
 --	, casualjoint_salu.elcn_personid
-	, casualjoint_salu.elcn_formattedname	MAILING_First_Name
+	, COALESCE(casualjoint_salu.elcn_formattedname
+				, casualsingle_salu.elcn_formattedname)	MAILING_First_Name
 	, CASE 
 		WHEN donor.datatel_enterprisesystemid IS NULL THEN 
 			donor_org.elcn_name
-		ELSE mailingjoint_salu.elcn_formattedname
+		ELSE COALESCE(mailingjoint_salu.elcn_formattedname
+					, mailingsingle_salu.elcn_formattedname) 
 	END MAILING_Full_Name
 
 --	, donor.contactid 
@@ -175,6 +177,12 @@ FROM
 	LEFT JOIN #temp_aprsalu MAILINGJOINT_SALU
 		ON  donor.contactid = mailingjoint_salu.elcn_personid
 		AND mailingjoint_salu.salu_code = 'CIFE'
+	LEFT JOIN #temp_aprsalu   casualsingle_salu
+		ON  donor.contactid = casualsingle_salu.elcn_personid
+		AND casualsingle_salu.salu_code = 'SIFL'
+	LEFT JOIN #temp_aprsalu MAILINGSINGLE_SALU
+		ON  donor.contactid = mailingsingle_salu.elcn_personid
+		AND mailingsingle_salu.salu_code = 'SIFE'
 
 	LEFT JOIN elcn_addressassociationBase aab 
 		ON donor.ContactId = aab.elcn_personId 
