@@ -1,10 +1,10 @@
 ﻿/* Reto Egeter, fullparam.wordpress.com */
 
 DECLARE	@SearchStrTableName nvarchar(255), @SearchStrColumnName nvarchar(255), @SearchStrColumnValue nvarchar(255), @SearchStrInXML bit, @FullRowResult bit, @FullRowResultRows int
-SET @SearchStrColumnValue = '344220000%' /* use LIKE syntax */
+SET @SearchStrColumnValue = 'F22FA9F1-3F67-4235-A767-D63495631DDC%' /* use LIKE syntax */
 SET @FullRowResult = 1
 SET @FullRowResultRows = 3
-SET @SearchStrTableName = NULL /* NULL for all tables, uses LIKE syntax */
+SET @SearchStrTableName = '%trib%' /* NULL for all tables, uses LIKE syntax */
 SET @SearchStrColumnName =  NULL /* NULL for all columns, uses LIKE syntax */
 SET @SearchStrInXML = 0 /* Searching XML data may be slow */
 
