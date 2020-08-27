@@ -739,17 +739,35 @@ where ib.elcn_personid = 'E9397505-12EC-42DD-94D3-DC5F3E089E80'
 	group by elcn_personid 
 select * from elcn_statusbase where elcn_statusid = '378DE114-EB09-E511-943C-0050568068B7' -- elcn_name = current
 select * from elcn_involvementactivity;
-select top 5 elcn_involvementactivityid, elcn_name  from elcn_involvementactivityBase; -- activiies 
+select  elcn_involvementactivityid, elcn_name  from elcn_involvementactivityBase; -- activiies 
 /*elcn_involvementactivityid	elcn_name
 1E045733-25CB-4F13-AE19-98F14F6B95E2	1958 Football Team
 BA888E82-9AA2-40EA-93B5-087FA9600AF1	1963 Football Team
 A3A35777-9E7E-4E91-8D4E-2BBEBAF84A86	1994 Nat'l Champ Football Team
 E7DB033D-40AF-469F-9720-E4C8E0878667	1994 PLC Freshman Class
-561CAE7F-6787-460C-8E98-19B746BAB64B	9/11 Day of Service*/
+561CAE7F-6787-460C-8E98-19B746BAB64B	9/11 Day of Service
+9E391174-D80A-4374-8488-496F982F3BF5	Delta Zeta
+8F8C1637-797D-404C-A36A-83D08B8AFE07	Delta Zeta Sorority-ADDZ
+B438BE59-C701-424B-BB29-2484F773127A	Delta Zeta Sorority-DZETA*/
 select distinct elcn_name from elcn_involvementactivityBase where statuscode = 1 order by 1;
+select distinct cb.contactid,cb.fullname from elcn_involvementbase join contactbase cb on elcn_involvementbase.elcn_personid = cb.contactid  where elcn_ActivityId in ('9E391174-D80A-4374-8488-496F982F3BF5','8F8C1637-797D-404C-A36A-83D08B8AFE07','B438BE59-C701-424B-BB29-2484F773127A')
+and contactId = '29EA02BF-06E0-4E43-B700-1BC62B14D105';
+
 
 select  * from elcn_contributiondonor
 where datepart(YYYY,elcn_ContributionDate) =  @donationYear ;
+
+
+select mb.elcn_MembershipProgramId, mb.*, '+++' filler, mpl.*, '+++' filler2, sb.* from
+	elcn_membershipBase MB
+	JOIN elcn_membershipprogramlevelbase MPL
+		ON mb.elcn_MembershipLevelId = mpl.elcn_membershipprogramlevelId
+	JOIN elcn_statusbase SB
+		ON mb.elcn_MembershipStatusId  = sb.elcn_statusid
+where mb.elcn_PrimaryMemberPersonId = '0FBED6E5-0033-4371-B0BC-345394D13EE1'
+-- elcn_membershipprogram = '15863BDB-CBA0-40C7-A211-5CEA6B26F3A4'
+;
+select * from elcn_membershipprogram
 
 
 
@@ -1496,3 +1514,36 @@ PIVOT
 ;
 
 exec sp_columns elcn_contributionbase;
+
+select * from elcn_involvementbase where elcn_name like 'Delta%'; -- count = 1111
+
+select distinct cb.contactid,cb.fullname from elcn_involvementbase ib join contactbase cb on ib.elcn_personid = cb.contactid where ib.elcn_name like 'Delta%'; --728
+
+select * from elcn_addressbase where elcn_addressid = 'EDD9F47C-2DB3-40A3-A4B6-6CD7DB5F3ECE';
+DECLARE @p_county varchar(120) = '';
+select '^'+@p_county;
+SELECT
+	ab.elcn_addressId 
+	, ab.elcn_street1  Street_Line1
+	, ab.elcn_street2  Street_Line2
+	, ab.elcn_City  City
+	, spb.elcn_stateprovinceId 
+	, spb.elcn_Abbreviation  State_Province
+	, ab.elcn_postalcode  Postal_Code
+	, ab.elcn_county	County
+	, '^'+elcn_county teststring
+	, dcb.Datatel_abbreviation	Nation
+--INTO
+--	#temp_addresses
+FROM
+	elcn_addressBase AB
+	JOIN elcn_stateprovinceBase SPB
+		ON spb.elcn_stateprovinceId = ab.elcn_StateProvinceId
+	JOIN Datatel_countryBase DCB
+		ON dcb.Datatel_countryId = ab.elcn_country	
+where 
+ab.elcn_addressId = 'EDD9F47C-2DB3-40A3-A4B6-6CD7DB5F3ECE'
+	--ab.elcn_StateProvinceId in (@p_stateList)
+	AND CHARINDEX('^'+@p_county, '^'+COALESCE(ab.elcn_county,'')) > 0
+
+;

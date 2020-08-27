@@ -150,13 +150,14 @@ INTO
 	#temp_addresses
 FROM
 	elcn_addressBase AB
-	JOIN elcn_stateprovinceBase SPB
+	LEFT JOIN elcn_stateprovinceBase SPB
 		ON spb.elcn_stateprovinceId = ab.elcn_StateProvinceId
-	JOIN Datatel_countryBase DCB
+	LEFT JOIN Datatel_countryBase DCB
 		ON dcb.Datatel_countryId = ab.elcn_country		
 WHERE
-	ab.elcn_StateProvinceId in (@p_stateList)
-	AND ab.elcn_county like TRIM(@p_county)+'%'
+	(ab.elcn_StateProvinceId in (@p_stateList)
+		OR ab.elcn_StateProvinceId IS NULL)	
+	AND CHARINDEX('^'+TRIM(@p_county), '^'+COALESCE(ab.elcn_county,'')) &gt; 0
 ;
 CREATE NONCLUSTERED INDEX INDX_TMP_ADDRID ON #temp_addresses (elcn_addressId);
 
@@ -280,9 +281,13 @@ SELECT
 	, mpl.elcn_name
 	, sb.elcn_name status_desc
 	, mb.elcn_MembershipNumber  --7701
-	, CONVERT(DATE, mb.elcn_ExpireDate) elcn_ExpireDate  -- null
-	, ROW_NUMBER() OVER (PARTITION BY mb.elcn_PrimaryMemberPersonId, mpl.elcn_name
-				ORDER BY COALESCE(mb.elcn_expiredate,'31-DEC-2999') DESC) rn
+	, CONVERT(VARCHAR, mb.elcn_ExpireDate,101) elcn_ExpireDate  -- null
+	, ROW_NUMBER() OVER (PARTITION BY mb.elcn_PrimaryMemberPersonId, mb.elcn_MembershipProgramId
+				ORDER BY CASE
+							WHEN sb.elcn_name = 'Current' THEN 1
+							ELSE 2
+						END
+						, COALESCE(mb.elcn_expiredate,'31-DEC-2999') DESC) rn
 INTO 
 	#temp_membership
 FROM
@@ -291,7 +296,7 @@ FROM
 		ON mb.elcn_MembershipLevelId = mpl.elcn_membershipprogramlevelId
 	JOIN elcn_statusbase SB
 		ON mb.elcn_MembershipStatusId  = sb.elcn_statusid
-;
+;--select * from #temp_membership where elcn_PrimaryMemberPersonId = '0FBED6E5-0033-4371-B0BC-345394D13EE1'
 CREATE NONCLUSTERED INDEX INDX_TMP_ID_MEMBERSHIP ON #temp_membership (elcn_primarymemberpersonid);
 
 SELECT  
@@ -392,7 +397,8 @@ GROUP BY
 	elcn_personid,elcn_name
 ORDER BY 
 	elcn_personid,elcn_name
-;
+; --select * from #temp_activities where elcn_personid = 'CD5DAD62-4DEB-4AC1-9DFE-933AC0234842';
+
 CREATE NONCLUSTERED INDEX INDX_TMP_ID ON #temp_activities (elcn_personid);
 
 SELECT
@@ -429,7 +435,8 @@ FROM
 	)PVT;
 
 CREATE NONCLUSTERED INDEX INDX_TMP_ID ON #temp_giving_pivot (elcn_person);
-
+--select * from #temp_addresses where #temp_addresses.elcn_addressId = 'EDD9F47C-2DB3-40A3-A4B6-6CD7DB5F3ECE';
+--select * from #temp_addresses;
 SELECT
 	const.ContactId
 	, const.deceased_ind 
@@ -440,6 +447,9 @@ SELECT
 	, const.pref_first_name Preferred_First_Name
 	, const.Last_Name
 	, const.maiden_name
+
+	--, aab.elcn_AddressId
+	
 	, COALESCE(cife_salu.elcn_formattedname,sife_salu.elcn_formattedname) PREFERRED_FULL_W_SALUTATION
 	, COALESCE(cifl_salu.elcn_formattedname,sifl_salu.elcn_formattedname) PREFERRED_SHORT_W_SALUTATION
 	, sife_salu.elcn_formattedname SIFE
@@ -731,6 +741,7 @@ FROM
 			#temp_membership
 		WHERE
 			elcn_name like 'WON%'
+			AND rn = 1
 	) WON_MEMBERSHIP ON const.contactid = won_membership.elcn_PrimaryMemberPersonId
 
 	LEFT JOIN elcn_emailaddressbase eab
@@ -883,7 +894,8 @@ WHERE
 			SELECT
 				ib.elcn_name 
 			FROM
-				elcn_involvementBase IB
+				--elcn_involvementBase IB
+				#temp_activities ib
 			WHERE
 				ib.elcn_personid = const.contactid
 				AND ib.elcn_name in (@p_activities)						
@@ -893,7 +905,7 @@ WHERE
 			WHERE 
 				@p_ignore_activities = 'Y'	
 			)
-	AND(
+	AND (
 		EXISTS(
 			SELECT 
 				edu.Degree_Year
@@ -914,7 +926,12 @@ WHERE
 
 --and const.Primary_Name like '%Mutzig%'
 --and id in ('N00149607','N00148562','N00005419')
---and const.ContactId = '9D67DD91-B3CA-4AA7-BFCC-49BEE53AF420'
+--and const.ContactId IN (
+--						'FD946ABB-69CB-4387-B22D-BABF07B56A44' -- Aimme Lynn Poynter
+--						,'CD5DAD62-4DEB-4AC1-9DFE-933AC0234842' -- Abby Lee Parsons
+--						,'29EA02BF-06E0-4E43-B700-1BC62B14D105'  -- Gentrie L Griffin
+--						,'0fbed6e5-0033-4371-b0bc-345394d13ee1' -- April Murelio
+--						)
 ;</CommandText>
         <Timeout>300</Timeout>
         <rd:UseGenericDesigner>true</rd:UseGenericDesigner>
@@ -956,6 +973,10 @@ WHERE
           <DataField>maiden_name</DataField>
           <rd:TypeName>System.String</rd:TypeName>
         </Field>
+        <Field Name="MEMBERSHIP_NAME">
+          <DataField>MEMBERSHIP_NAME</DataField>
+          <rd:TypeName>System.String</rd:TypeName>
+        </Field>
         <Field Name="PREFERRED_FULL_W_SALUTATION">
           <DataField>PREFERRED_FULL_W_SALUTATION</DataField>
           <rd:TypeName>System.String</rd:TypeName>
@@ -964,40 +985,84 @@ WHERE
           <DataField>PREFERRED_SHORT_W_SALUTATION</DataField>
           <rd:TypeName>System.String</rd:TypeName>
         </Field>
+        <Field Name="MEMBERSHIP_STATUS">
+          <DataField>MEMBERSHIP_STATUS</DataField>
+          <rd:TypeName>System.String</rd:TypeName>
+        </Field>
         <Field Name="SIFE">
           <DataField>SIFE</DataField>
+          <rd:TypeName>System.String</rd:TypeName>
+        </Field>
+        <Field Name="MEMBERSHIP_NUMBER">
+          <DataField>MEMBERSHIP_NUMBER</DataField>
           <rd:TypeName>System.String</rd:TypeName>
         </Field>
         <Field Name="SIFL">
           <DataField>SIFL</DataField>
           <rd:TypeName>System.String</rd:TypeName>
         </Field>
+        <Field Name="EXPIRATION_DATE">
+          <DataField>EXPIRATION_DATE</DataField>
+          <rd:TypeName>System.String</rd:TypeName>
+        </Field>
         <Field Name="Primary_Constituent_Type">
           <DataField>Primary_Constituent_Type</DataField>
+          <rd:TypeName>System.String</rd:TypeName>
+        </Field>
+        <Field Name="WON_MEMBERSHIP_NAME">
+          <DataField>WON_MEMBERSHIP_NAME</DataField>
+          <rd:TypeName>System.String</rd:TypeName>
+        </Field>
+        <Field Name="WON_MEMBERSHIP_STATUS">
+          <DataField>WON_MEMBERSHIP_STATUS</DataField>
           <rd:TypeName>System.String</rd:TypeName>
         </Field>
         <Field Name="Primary_Constituent_Desc">
           <DataField>Primary_Constituent_Desc</DataField>
           <rd:TypeName>System.String</rd:TypeName>
         </Field>
+        <Field Name="WON_MEMBERSHIP_NUMBER">
+          <DataField>WON_MEMBERSHIP_NUMBER</DataField>
+          <rd:TypeName>System.String</rd:TypeName>
+        </Field>
         <Field Name="Street_Line1">
           <DataField>Street_Line1</DataField>
+          <rd:TypeName>System.String</rd:TypeName>
+        </Field>
+        <Field Name="WON_EXPIRATION_DATE">
+          <DataField>WON_EXPIRATION_DATE</DataField>
           <rd:TypeName>System.String</rd:TypeName>
         </Field>
         <Field Name="Street_Line2">
           <DataField>Street_Line2</DataField>
           <rd:TypeName>System.String</rd:TypeName>
         </Field>
+        <Field Name="FAN_MEMBERSHIP_NAME">
+          <DataField>FAN_MEMBERSHIP_NAME</DataField>
+          <rd:TypeName>System.String</rd:TypeName>
+        </Field>
         <Field Name="City">
           <DataField>City</DataField>
+          <rd:TypeName>System.String</rd:TypeName>
+        </Field>
+        <Field Name="FAN_MEMBERSHIP_STATUS">
+          <DataField>FAN_MEMBERSHIP_STATUS</DataField>
           <rd:TypeName>System.String</rd:TypeName>
         </Field>
         <Field Name="State_Province">
           <DataField>State_Province</DataField>
           <rd:TypeName>System.String</rd:TypeName>
         </Field>
+        <Field Name="FAN_MEMBERSHIP_NUMBER">
+          <DataField>FAN_MEMBERSHIP_NUMBER</DataField>
+          <rd:TypeName>System.String</rd:TypeName>
+        </Field>
         <Field Name="Postal_Code">
           <DataField>Postal_Code</DataField>
+          <rd:TypeName>System.String</rd:TypeName>
+        </Field>
+        <Field Name="FAN_EXPIRATION_DATE">
+          <DataField>FAN_EXPIRATION_DATE</DataField>
           <rd:TypeName>System.String</rd:TypeName>
         </Field>
         <Field Name="County">
@@ -1088,16 +1153,16 @@ WHERE
           <DataField>Largest_Lifetime_Contribution</DataField>
           <rd:TypeName>System.Decimal</rd:TypeName>
         </Field>
-        <Field Name="Number_of_Gifts_For_Period">
-          <DataField>Number_of_Gifts_For_Period</DataField>
-          <rd:TypeName>System.Int32</rd:TypeName>
-        </Field>
         <Field Name="Last_Lifetime_Contibution_Date">
           <DataField>Last_Lifetime_Contibution_Date</DataField>
           <rd:TypeName>System.String</rd:TypeName>
         </Field>
         <Field Name="Lifetime_Total_Years_Giving">
           <DataField>Lifetime_Total_Years_Giving</DataField>
+          <rd:TypeName>System.Int32</rd:TypeName>
+        </Field>
+        <Field Name="Number_of_Gifts_For_Period">
+          <DataField>Number_of_Gifts_For_Period</DataField>
           <rd:TypeName>System.Int32</rd:TypeName>
         </Field>
         <Field Name="Campaign_Value_YTD_for_Period">
@@ -1115,54 +1180,6 @@ WHERE
         <Field Name="Campaign_Value_Year4">
           <DataField>Campaign_Value_Year4</DataField>
           <rd:TypeName>System.Decimal</rd:TypeName>
-        </Field>
-        <Field Name="MEMBERSHIP_NAME">
-          <DataField>MEMBERSHIP_NAME</DataField>
-          <rd:TypeName>System.String</rd:TypeName>
-        </Field>
-        <Field Name="MEMBERSHIP_STATUS">
-          <DataField>MEMBERSHIP_STATUS</DataField>
-          <rd:TypeName>System.String</rd:TypeName>
-        </Field>
-        <Field Name="MEMBERSHIP_NUMBER">
-          <DataField>MEMBERSHIP_NUMBER</DataField>
-          <rd:TypeName>System.String</rd:TypeName>
-        </Field>
-        <Field Name="EXPIRATION_DATE">
-          <DataField>EXPIRATION_DATE</DataField>
-          <rd:TypeName>System.DateTime</rd:TypeName>
-        </Field>
-        <Field Name="WON_MEMBERSHIP_NAME">
-          <DataField>WON_MEMBERSHIP_NAME</DataField>
-          <rd:TypeName>System.String</rd:TypeName>
-        </Field>
-        <Field Name="WON_MEMBERSHIP_STATUS">
-          <DataField>WON_MEMBERSHIP_STATUS</DataField>
-          <rd:TypeName>System.String</rd:TypeName>
-        </Field>
-        <Field Name="WON_MEMBERSHIP_NUMBER">
-          <DataField>WON_MEMBERSHIP_NUMBER</DataField>
-          <rd:TypeName>System.String</rd:TypeName>
-        </Field>
-        <Field Name="WON_EXPIRATION_DATE">
-          <DataField>WON_EXPIRATION_DATE</DataField>
-          <rd:TypeName>System.DateTime</rd:TypeName>
-        </Field>
-        <Field Name="FAN_MEMBERSHIP_NAME">
-          <DataField>FAN_MEMBERSHIP_NAME</DataField>
-          <rd:TypeName>System.String</rd:TypeName>
-        </Field>
-        <Field Name="FAN_MEMBERSHIP_STATUS">
-          <DataField>FAN_MEMBERSHIP_STATUS</DataField>
-          <rd:TypeName>System.String</rd:TypeName>
-        </Field>
-        <Field Name="FAN_MEMBERSHIP_NUMBER">
-          <DataField>FAN_MEMBERSHIP_NUMBER</DataField>
-          <rd:TypeName>System.String</rd:TypeName>
-        </Field>
-        <Field Name="FAN_EXPIRATION_DATE">
-          <DataField>FAN_EXPIRATION_DATE</DataField>
-          <rd:TypeName>System.DateTime</rd:TypeName>
         </Field>
         <Field Name="EMAIL_PREFERRED_ADDRESS">
           <DataField>EMAIL_PREFERRED_ADDRESS</DataField>
@@ -8192,12 +8209,17 @@ OPTION (MAXRECURSION 200);</CommandText>
                 </TablixMember>
                 <TablixMember>
                   <Group Name="Details" />
+                  <SortExpressions>
+                    <SortExpression>
+                      <Value>=Fields!Primary_Name.Value</Value>
+                    </SortExpression>
+                  </SortExpressions>
                 </TablixMember>
               </TablixMembers>
             </TablixRowHierarchy>
             <DataSetName>ds_standardConstituent</DataSetName>
             <Height>0.5in</Height>
-            <Width>167.83334in</Width>
+            <Width>167.83333in</Width>
             <Style>
               <Border>
                 <Style>None</Style>

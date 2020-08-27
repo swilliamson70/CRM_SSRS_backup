@@ -1,35 +1,36 @@
 ﻿DECLARE 
                  
-	 @p_stateList uniqueidentifier = 'E323CFDA-A383-E911-80D7-0A253F89019C' -- TX 'C823CFDA-A383-E911-80D7-0A253F89019C' -- KS 'DC23CFDA-A383-E911-80D7-0A253F89019C' -- ok
-	, @p_zipcodeList varchar(9) = '74331'
+	 @p_stateList uniqueidentifier = 'DC23CFDA-A383-E911-80D7-0A253F89019C' -- ok 'E323CFDA-A383-E911-80D7-0A253F89019C' -- TX 'C823CFDA-A383-E911-80D7-0A253F89019C' -- KS 
+--	, @p_zipcodeList varchar(9) = '74014'
 	, @p_county varchar(120) = '' -- not found in CRM data entry in person, prospect pages
-	, @p_cityname varchar(120) = 'Tah' -- dnu/ too expensive
-	, @p_veteran varchar(1)-- not found in CRM data entry
-	, @p_household_ind varchar(1) -- APRXREF_HOUSEHOLD_IND -- flag on xref rec linking people at same address
+--	, @p_cityname varchar(120) = 'Tah' -- dnu/ too expensive
+--	, @p_veteran varchar(1)-- not found in CRM data entry
+--	, @p_household_ind varchar(1) -- APRXREF_HOUSEHOLD_IND -- flag on xref rec linking people at same address
 									-- at same address and other than married, why exclude?
 									-- at same address and married/partnered then primary spouse only flag is same condition
 
 	, @p_include_deceased varchar(1) = 'Y' -- y/n
-	, @p_primary_spouse_only varchar(1) = 'Y' -- y/n
-	, @p_gift_capacity varchar(99)
-	, @p_wealth_engine_des varchar(1)
-	, @p_donor_cats varchar(99) -- aldc / alumni degree completion, alum - degreed slumna/us
-	, @p_exclusion_codes varchar(3) -- ams, nak
-	, @p_mail_codes varchar(99) -- ack - acknowledgements/reminders, acl -alumni/club chapter mailings
-	, @p_special_purpose_types varchar(99) -- nsueg - nsu employee giving design, nsuin - nsu support interest
-	, @p_special_purpose_groups varchar(99) -- acaff - academic affaris, admn - administration
-	, @p_activities varchar(99) -- adplc - president's leadership class, 
+--	, @p_primary_spouse_only varchar(1) = 'Y' -- y/n
+--	, @p_gift_capacity varchar(99)
+--	, @p_wealth_engine_des varchar(1)
+--	, @p_donor_cats varchar(99) -- aldc / alumni degree completion, alum - degreed slumna/us
+--	, @p_exclusion_codes varchar(3) -- ams, nak
+--	, @p_mail_codes varchar(99) -- ack - acknowledgements/reminders, acl -alumni/club chapter mailings
+--	, @p_special_purpose_types varchar(99) -- nsueg - nsu employee giving design, nsuin - nsu support interest
+--	, @p_special_purpose_groups varchar(99) -- acaff - academic affaris, admn - administration
+	, @p_activities varchar(99) = 'Delta Zeta Sorority-ADDZ' -- adplc - president's leadership class, 
 	, @p_activity_years varchar(4) -- list of years
-	, @p_leadership_roles varchar(99) -- stvlead
+--	, @p_leadership_roles varchar(99) -- stvlead
 	, @p_academic_years varchar(4) -- list of years
-	, @p_majors varchar(99) -- 0000 - undeclared, 1100 - business admin
-	, @p_degrees varchar(99) -- a - associates, aa - associates in arts
+--	, @p_majors varchar(99) -- 0000 - undeclared, 1100 - business admin
+--	, @p_degrees varchar(99) -- a - associates, aa - associates in arts
 	, @p_ignore_activities varchar(1) = 'Y'
 	, @p_ignore_academic_years varchar(1) = 'Y'
 	, @p_exclude_nongivers varchar(1) = 'N'
 	;
 
 DECLARE @p_StartDate date = '01/01/2019', @p_EndDate date = '12/31/2019';
+--select * from #temp_const where Primary_Name = 'Aimme Lynn Poynter';
 SELECT
 	cb.contactid
 	, CASE
@@ -134,13 +135,14 @@ INTO
 	#temp_addresses
 FROM
 	elcn_addressBase AB
-	JOIN elcn_stateprovinceBase SPB
+	LEFT JOIN elcn_stateprovinceBase SPB
 		ON spb.elcn_stateprovinceId = ab.elcn_StateProvinceId
-	JOIN Datatel_countryBase DCB
+	LEFT JOIN Datatel_countryBase DCB
 		ON dcb.Datatel_countryId = ab.elcn_country		
 WHERE
-	ab.elcn_StateProvinceId in (@p_stateList)
-	AND ab.elcn_county like TRIM(@p_county)+'%'
+	(ab.elcn_StateProvinceId in (@p_stateList)
+		OR ab.elcn_StateProvinceId IS NULL)	
+	AND CHARINDEX('^'+TRIM(@p_county), '^'+COALESCE(ab.elcn_county,'')) > 0
 ;
 CREATE NONCLUSTERED INDEX INDX_TMP_ADDRID ON #temp_addresses (elcn_addressId);
 
@@ -264,9 +266,13 @@ SELECT
 	, mpl.elcn_name
 	, sb.elcn_name status_desc
 	, mb.elcn_MembershipNumber  --7701
-	, CONVERT(DATE, mb.elcn_ExpireDate) elcn_ExpireDate  -- null
-	, ROW_NUMBER() OVER (PARTITION BY mb.elcn_PrimaryMemberPersonId, mpl.elcn_name
-				ORDER BY COALESCE(mb.elcn_expiredate,'31-DEC-2999') DESC) rn
+	, CONVERT(VARCHAR, mb.elcn_ExpireDate,101) elcn_ExpireDate  -- null
+	, ROW_NUMBER() OVER (PARTITION BY mb.elcn_PrimaryMemberPersonId, mb.elcn_MembershipProgramId
+				ORDER BY CASE
+							WHEN sb.elcn_name = 'Current' THEN 1
+							ELSE 2
+						END
+						, COALESCE(mb.elcn_expiredate,'31-DEC-2999') DESC) rn
 INTO 
 	#temp_membership
 FROM
@@ -275,7 +281,7 @@ FROM
 		ON mb.elcn_MembershipLevelId = mpl.elcn_membershipprogramlevelId
 	JOIN elcn_statusbase SB
 		ON mb.elcn_MembershipStatusId  = sb.elcn_statusid
-;
+;--select * from #temp_membership where elcn_PrimaryMemberPersonId = '0FBED6E5-0033-4371-B0BC-345394D13EE1'
 CREATE NONCLUSTERED INDEX INDX_TMP_ID_MEMBERSHIP ON #temp_membership (elcn_primarymemberpersonid);
 
 SELECT  
@@ -376,7 +382,8 @@ GROUP BY
 	elcn_personid,elcn_name
 ORDER BY 
 	elcn_personid,elcn_name
-;
+; --select * from #temp_activities where elcn_personid = 'CD5DAD62-4DEB-4AC1-9DFE-933AC0234842';
+
 CREATE NONCLUSTERED INDEX INDX_TMP_ID ON #temp_activities (elcn_personid);
 
 SELECT
@@ -413,7 +420,8 @@ FROM
 	)PVT;
 
 CREATE NONCLUSTERED INDEX INDX_TMP_ID ON #temp_giving_pivot (elcn_person);
-
+--select * from #temp_addresses where #temp_addresses.elcn_addressId = 'EDD9F47C-2DB3-40A3-A4B6-6CD7DB5F3ECE';
+--select * from #temp_addresses;
 SELECT
 	const.ContactId
 	, const.deceased_ind 
@@ -424,6 +432,9 @@ SELECT
 	, const.pref_first_name Preferred_First_Name
 	, const.Last_Name
 	, const.maiden_name
+
+	--, aab.elcn_AddressId
+	
 	, COALESCE(cife_salu.elcn_formattedname,sife_salu.elcn_formattedname) PREFERRED_FULL_W_SALUTATION
 	, COALESCE(cifl_salu.elcn_formattedname,sifl_salu.elcn_formattedname) PREFERRED_SHORT_W_SALUTATION
 	, sife_salu.elcn_formattedname SIFE
@@ -715,6 +726,7 @@ FROM
 			#temp_membership
 		WHERE
 			elcn_name like 'WON%'
+			AND rn = 1
 	) WON_MEMBERSHIP ON const.contactid = won_membership.elcn_PrimaryMemberPersonId
 
 	LEFT JOIN elcn_emailaddressbase eab
@@ -867,7 +879,8 @@ WHERE
 			SELECT
 				ib.elcn_name 
 			FROM
-				elcn_involvementBase IB
+				--elcn_involvementBase IB
+				#temp_activities ib
 			WHERE
 				ib.elcn_personid = const.contactid
 				AND ib.elcn_name in (@p_activities)						
@@ -877,7 +890,7 @@ WHERE
 			WHERE 
 				@p_ignore_activities = 'Y'	
 			)
-	AND(
+	AND (
 		EXISTS(
 			SELECT 
 				edu.Degree_Year
@@ -898,5 +911,11 @@ WHERE
 
 --and const.Primary_Name like '%Mutzig%'
 --and id in ('N00149607','N00148562','N00005419')
---and const.ContactId = '9D67DD91-B3CA-4AA7-BFCC-49BEE53AF420'
+--and const.ContactId IN (
+--						'FD946ABB-69CB-4387-B22D-BABF07B56A44' -- Aimme Lynn Poynter
+--						,'CD5DAD62-4DEB-4AC1-9DFE-933AC0234842' -- Abby Lee Parsons
+--						,'29EA02BF-06E0-4E43-B700-1BC62B14D105'  -- Gentrie L Griffin
+--						,'0fbed6e5-0033-4371-b0bc-345394d13ee1' -- April Murelio
+--						)
 ;
+--select * from #temp_const where ContactId = 'FD946ABB-69CB-4387-B22D-BABF07B56A44';
