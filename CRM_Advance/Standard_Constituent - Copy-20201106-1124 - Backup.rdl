@@ -1,0 +1,907 @@
+<?xml version="1.0" encoding="utf-8"?><Report xmlns="http://schemas.microsoft.com/sqlserver/reporting/2010/01/reportdefinition" xmlns:rd="http://schemas.microsoft.com/SQLServer/reporting/reportdesigner"><AutoRefresh>0</AutoRefresh><DataSources><DataSource Name="MSCRM_DataSource"><Transaction>true</Transaction><DataSourceReference>MSCRM_DataSource</DataSourceReference><rd:SecurityType>None</rd:SecurityType><rd:DataSourceID>82ca6b8c-79be-4976-b61a-3aea29b4ef09</rd:DataSourceID></DataSource></DataSources><DataSets><DataSet Name="ds_standardConstituent"><Query><DataSourceName>MSCRM_DataSource</DataSourceName><QueryParameters><QueryParameter Name="@p_include_deceased"><Value>=Parameters!p_include_deceased.Value</Value></QueryParameter><QueryParameter Name="@p_stateList"><Value>=Parameters!p_stateList.Value</Value></QueryParameter><QueryParameter Name="@p_county"><Value>=Parameters!p_county.Value</Value></QueryParameter><QueryParameter Name="@p_EndDate"><Value>=Parameters!p_EndDate.Value</Value></QueryParameter><QueryParameter Name="@p_activities"><Value>=Parameters!p_activities.Value</Value></QueryParameter><QueryParameter Name="@p_StartDate"><Value>=Parameters!p_StartDate.Value</Value></QueryParameter><QueryParameter Name="@p_ignore_activities"><Value>=Parameters!p_ignore_activities.Value</Value></QueryParameter><QueryParameter Name="@p_academic_years"><Value>=Parameters!p_academic_years.Value</Value></QueryParameter><QueryParameter Name="@p_ignore_academic_years"><Value>=Parameters!p_ignore_academic_years.Value</Value></QueryParameter><QueryParameter Name="@p_exclude_nongivers"><Value>=Parameters!p_exclude_nongivers.Value</Value></QueryParameter></QueryParameters><CommandText>SELECT
+	cb.contactid
+	, CASE
+		WHEN elcn_PersonStatusId IN ('CF133D0E-4205-4EC8-B3D1-799074F7A72D',
+									'57B3E088-CDD5-4808-9D53-5F530BDCD320',
+									'233C10DC-B283-4C57-866C-52138BF01CEB') 
+			THEN 'Y'
+		ELSE 'N'
+	END DECEASED_IND
+	, cb.elcn_dateofbirth DATE_OF_BIRTH
+	, cb.elcn_PrimaryID pidm
+	, cb.datatel_EnterpriseSystemId ID
+	, cb.fullname Primary_Name
+	, pfn.elcn_firstname PREF_FIRST_NAME
+	, cb.lastname Last_Name
+	, maiden.elcn_lastname MAIDEN_NAME
+	, elcn_anonymitytypeBase.elcn_type anonymityType
+	, cb.elcn_LargestContributionAmount Largest_Contribution_Amount
+	, cb.elcn_LastContributionDate
+	, cb.elcn_totalGiving Lifetime_Giving
+	, cb.elcn_totalyearsofgiving Lifetime_Total_Years_Giving
+	, cb.elcn_primaryconstituentaffiliationid
+INTO
+	#temp_const
+FROM(
+	SELECT 
+		ContactBase.*
+	FROM
+		contactbase
+	WHERE
+		fullname not like '%DO%NOT%USE'
+		AND (@p_include_deceased = 'Y' 
+			OR elcn_PersonStatusId NOT IN ('CF133D0E-4205-4EC8-B3D1-799074F7A72D',
+											'57B3E088-CDD5-4808-9D53-5F530BDCD320',
+											'233C10DC-B283-4C57-866C-52138BF01CEB')
+			)
+		AND statuscode = 1
+		--AND contactbase.contactid in (SELECT contactid from w_contactid_list)
+	) CB
+	LEFT JOIN(
+		SELECT TOP 1
+			pnb.elcn_personid
+			, pnb.elcn_firstname
+		FROM 
+			elcn_personnameBase pnb
+		WHERE
+			pnb.elcn_nametype = 'EBC22907-A5CB-4270-8947-C5381D1ECC54' 
+			AND pnb.elcn_EndDate IS NULL
+			AND pnb.statuscode = 1
+		ORDER BY pnb.ModifiedOn
+	) PFN ON cb.contactid = pfn.elcn_personid
+	LEFT JOIN(
+		SELECT TOP 1
+			pnb.elcn_personid 
+			, pnb.elcn_lastname
+		FROM 
+			elcn_personnameBase pnb
+		WHERE 
+			pnb.elcn_nametype = '29C69522-08C1-48E3-A030-F417A0E741C0' 
+			AND pnb.elcn_EndDate IS NULL
+			AND pnb.statuscode = 1
+		ORDER BY pnb.ModifiedOn 
+	) MAIDEN ON cb.contactid = maiden.elcn_personid
+	LEFT JOIN elcn_anonymitytypebase 
+		ON cb.elcn_AnonymityTypeId = elcn_anonymitytypeBase.elcn_anonymitytypeId
+;
+CREATE NONCLUSTERED INDEX INDX_TMP_ID ON #temp_const (contactid);
+
+SELECT
+	e.elcn_PersonID,
+	e.elcn_educationid,
+	d.elcn_code DEGREE,
+	d.elcn_Name AS Degree_Name,
+	e.elcn_DegreeYear Degree_Year,
+	(
+		Select TOP 1 mb.elcn_name FROM elcn_education_elcn_majorBase emb
+		INNER JOIN elcn_majorBase mb ON mb.elcn_majorId = emb.elcn_majorid
+		Where emb.elcn_educationid = e.elcn_educationId
+	) AS Major,
+	ROW_NUMBER() OVER(PARTITION BY e.elcn_personId 
+					ORDER BY e.elcn_DegreeYear DESC) AS RANK_NO
+INTO 
+	#temp_education
+FROM 
+	dbo.elcn_educationBase e
+	JOIN elcn_degreeBase d on d.elcn_degreeId = e.elcn_DegreeId
+WHERE e.statuscode = 1
+;
+CREATE NONCLUSTERED INDEX INDX_TMP_EDUCATION_RANKS ON #temp_education (elcn_personId);
+
+SELECT
+	ab.elcn_addressId 
+	, ab.elcn_street1  Street_Line1
+	, ab.elcn_street2  Street_Line2
+	, ab.elcn_City  City
+	, spb.elcn_stateprovinceId 
+	, spb.elcn_Abbreviation  State_Province
+	, ab.elcn_postalcode  Postal_Code
+	, ab.elcn_county	County
+	, dcb.Datatel_abbreviation	Nation
+INTO
+	#temp_addresses
+FROM
+	elcn_addressBase AB
+	LEFT JOIN elcn_stateprovinceBase SPB
+		ON spb.elcn_stateprovinceId = ab.elcn_StateProvinceId
+	LEFT JOIN Datatel_countryBase DCB
+		ON dcb.Datatel_countryId = ab.elcn_country		
+WHERE
+	(ab.elcn_StateProvinceId in (@p_stateList)
+		OR ab.elcn_StateProvinceId IS NULL)	
+	AND CHARINDEX('^'+TRIM(@p_county), '^'+COALESCE(ab.elcn_county,'')) &gt; 0
+;
+CREATE NONCLUSTERED INDEX INDX_TMP_ADDRID ON #temp_addresses (elcn_addressId);
+
+SELECT * 
+INTO
+	#temp_exclusion_codes
+FROM (
+SELECT
+	cpb.elcn_personid
+	, CASE cpb.elcn_ContactRestrictionID 
+		WHEN '8872A718-5472-40C4-82C7-DB72FC4CE5A6' THEN
+			CASE elcn_ContactPreferenceTypeId
+				WHEN  '112A7585-A2D9-E911-80D8-0A253F89019C' THEN
+					CASE elcn_MethodofContact
+						WHEN 344220001 THEN 
+							'NPH'
+						WHEN 344220000 THEN 
+							'NMC'
+						WHEN 344220002 THEN 
+							'NEM'
+					END
+				WHEN '76EA8AA5-2F36-4E8E-BFB2-490677DCF4B4' THEN
+					CASE WHEN elcn_MethodofContact = 344220006 THEN 'NOC' END
+				WHEN 'EE8CE7BD-9CB8-E911-80D8-0A253F89019C' THEN
+					CASE WHEN elcn_MethodofContact = 344220000 THEN 'NAM' END
+				WHEN 'e4e02dc6-3314-e511-9431-005056804b43' THEN
+					CASE WHEN elcn_MethodofContact = 344220006 THEN 'NDN' END
+				WHEN 'DEE02DC6-3314-E511-9431-005056804B43' THEN
+					CASE WHEN elcn_MethodofContact = 344220000 THEN 'NAK' END
+			END 
+		WHEN '3E4E206F-9EB8-E911-80D8-0A253F89019C' THEN
+			'NTP'
+	END exclusion_code
+FROM
+	elcn_contactpreferenceBase cpb
+WHERE
+	cpb.elcn_ContactPreferenceStatusID = '378DE114-EB09-E511-943C-0050568068B7'
+	AND (cpb.elcn_RestrictionLiftDate &lt; CURRENT_TIMESTAMP OR cpb.elcn_RestrictionLiftDate IS NULL)
+	AND elcn_personid IS NOT NULL
+) T 
+PIVOT
+(	MAX(exclusion_code)
+	FOR exclusion_code 
+	IN ([NPH], [NOC], [NMC], [NEM], [NAM], [NDN], [NAK], [NTP])
+)PVT
+;
+CREATE NONCLUSTERED INDEX INDX_TMP_ID ON #temp_exclusion_codes (elcn_personId);
+
+SELECT 
+	elcn_personid,
+	CASE elcn_typeid 
+		WHEN '1172C46B-462D-E411-9415-005056804B43' THEN 'CIFE'
+		WHEN '0F72C46B-462D-E411-9415-005056804B43' THEN 'SIFE'
+		WHEN '1B72C46B-462D-E411-9415-005056804B43' THEN 'SIFL'
+		WHEN '89799F16-C4E8-4269-B409-5756998F193F' THEN 'CIFL'
+	END AS SALU_CODE,
+	elcn_formattedname,
+	ROW_NUMBER() OVER (PARTITION BY elcn_personid, elcn_typeid ORDER BY elcn_locked DESC, modifiedon DESC) RN
+INTO
+	#temp_aprsalu
+FROM
+	elcn_formattednamebase
+WHERE
+	elcn_typeid in ('1172C46B-462D-E411-9415-005056804B43',  
+			    		'0F72C46B-462D-E411-9415-005056804B43',  
+	     				'1B72C46B-462D-E411-9415-005056804B43', 
+		    			'89799F16-C4E8-4269-B409-5756998F193F')  
+	AND elcn_enddate IS NULL
+;
+CREATE NONCLUSTERED INDEX INDX_TMP_ID_SALU ON #temp_aprsalu (elcn_personId,salu_code,rn);
+
+SELECT elcn_personid, elcn_ratingtypeid, [Value], [Level], [Score]
+INTO #temp_ratings
+FROM(
+	SELECT
+		elcn_ratingBase.elcn_ratingDescription ,
+		elcn_ratingBase.elcn_personid,
+		elcn_ratingBase.elcn_ratingtypeid,
+		elcn_ratingBase.elcn_ratingvalue
+	FROM
+		elcn_ratingBase
+	WHERE
+		elcn_ratingtypeid in	('88C5BD4A-BF21-4635-B8BB-EBE956F2E5BD'
+								,'1BB294D5-53D7-4815-8963-096802773E6D'
+								,'3DE9ACBB-37E5-45AF-8902-2314FC2A9538')
+) T PIVOT
+(	
+	MAX(elcn_ratingvalue)
+	FOR elcn_ratingDescription  IN
+	([Value], [Level], [Score]) 
+) PVT
+;
+CREATE NONCLUSTERED INDEX INDX_TMP_ID_RATINGTYPE ON #temp_ratings (elcn_personid, elcn_ratingtypeid);
+
+SELECT 
+	cdb.elcn_person
+	, SUM(cdb.elcn_CampaignValue) Total_Giving
+	, SUM(c.elcn_TotalPremiumFairMarketValue)  Total_Premiums
+	, SUM(c.elcn_marketValue) Total_Fair_Market_Value
+	--, null gift_count
+	, COUNT(cdb.elcn_CampaignValue) Gift_Count
+INTO
+	#temp_contributions
+FROM
+	elcn_contributiondonorBase cdb
+	JOIN elcn_contribution c 
+		ON cdb.elcn_contribution = c.elcn_contributionId
+WHERE
+	c.statuscode = 1
+	AND c.elcn_contributiontype IN (344220000, 
+									344220001, 
+									344220004,
+									344220005) 
+	and cdb.elcn_ContributionDate BETWEEN @p_StartDate AND @p_EndDate
+GROUP BY elcn_person
+;
+CREATE NONCLUSTERED INDEX INDX_TMP_ID on #temp_contributions (elcn_person);
+
+SELECT
+	mb.elcn_PrimaryMemberPersonId
+	, mpl.elcn_name
+	, sb.elcn_name status_desc
+	, mb.elcn_MembershipNumber  --7701
+	, CONVERT(VARCHAR, mb.elcn_ExpireDate,101) elcn_ExpireDate  -- null
+	, ROW_NUMBER() OVER (PARTITION BY mb.elcn_PrimaryMemberPersonId, mb.elcn_MembershipProgramId
+				ORDER BY CASE
+							WHEN sb.elcn_name = 'Current' THEN 1
+							ELSE 2
+						END
+						, COALESCE(mb.elcn_expiredate,'31-DEC-2999') DESC) rn
+INTO 
+	#temp_membership
+FROM
+	elcn_membershipBase MB
+	JOIN elcn_membershipprogramlevelbase MPL
+		ON mb.elcn_MembershipLevelId = mpl.elcn_membershipprogramlevelId
+	JOIN elcn_statusbase SB
+		ON mb.elcn_MembershipStatusId  = sb.elcn_statusid
+;--select * from #temp_membership where elcn_PrimaryMemberPersonId = '0FBED6E5-0033-4371-B0BC-345394D13EE1'
+CREATE NONCLUSTERED INDEX INDX_TMP_ID_MEMBERSHIP ON #temp_membership (elcn_primarymemberpersonid);
+
+SELECT  
+	elcn_personid,
+	Preferred,
+	Business,
+	Personal,
+	Other,
+	Yellow,
+	Alumni,
+	NSU
+INTO 
+	#temp_email_slot
+FROM(
+	SELECT
+		case elcn_typeid
+			WHEN 'CC0141A1-A383-E911-80D7-0A253F89019C' THEN 'Business'
+			WHEN 'CD0141A1-A383-E911-80D7-0A253F89019C' THEN 'Personal'
+			WHEN '31292157-E075-4E85-9204-1CCEDEC9DBF9'	THEN 'Other'
+			WHEN 'F523FC9B-5370-46F3-9242-263411E73043' THEN 'Yellow ' 
+			WHEN 'A4B7A0CC-0DFF-4069-8337-6571B94CA5BD'	THEN 'Alumni'
+			WHEN '26E175F1-4286-4B7E-9CE9-F2E383D58EFD'	THEN 'NSU'
+			ELSE 'Unknown'
+		END AS emailtype,
+		elcn_personid,
+		elcn_email
+	FROM
+		elcn_emailaddressbase
+	WHERE
+		statuscode = 1
+		AND	elcn_EmailAddressStatusId = '378DE114-EB09-E511-943C-0050568068B7'
+										
+	UNION ALL 
+	SELECT
+		'Preferred',
+		elcn_personid,
+		elcn_email
+	FROM
+		elcn_emailaddressbase
+	WHERE
+		statuscode =1 
+		AND	elcn_EmailAddressStatusId = '378DE114-EB09-E511-943C-0050568068B7' 
+		AND elcn_preferred = 1
+
+)T PIVOT 
+(	MAX(elcn_email)
+	FOR emailtype 
+	IN ([Preferred], [Business], [Personal], [Other], [Yellow], [Alumni], [NSU])
+)PVT;
+
+CREATE NONCLUSTERED INDEX INDX_TMP_ID ON #temp_email_slot (elcn_personid);
+
+SELECT
+	elcn_personid, 
+	elcn_phonenumber, 
+	elcn_type,
+	elcn_preferred -- 0/1
+INTO #temp_phone
+FROM(
+	SELECT 
+		elcn_personid
+		, elcn_phonenumber
+		, elcn_phonetypeBase.elcn_type
+		, elcn_preferred
+		, ROW_NUMBER() OVER (PARTITION BY elcn_personid, elcn_phonetypebase.elcn_type
+								ORDER BY elcn_preferred DESC) RN
+	FROM
+		elcn_phonebase
+		JOIN elcn_phonetypebase
+			ON elcn_phonebase.elcn_phonetype = elcn_phonetypebase.elcn_phonetypeid  
+			AND elcn_phonebase.elcn_phonestatusid = '378DE114-EB09-E511-943C-0050568068B7' 
+			AND elcn_phonebase.statuscode = 1
+	) PHONES 
+WHERE
+	RN = 1 
+CREATE NONCLUSTERED INDEX INDX_TMP_ID ON #temp_phone (elcn_personid);
+
+SELECT 
+	elcn_personid
+	, elcn_name
+	, STRING_AGG(ayear,',') AYEARS
+INTO
+	#temp_activities
+FROM(
+	SELECT 
+		ib.elcn_personid
+		, ib.elcn_name
+		, COALESCE(ib.elcn_ClassYear, ib.elcn_EndYear, 'UNK') AYEAR
+	FROM 
+		elcn_involvementBase IB
+	ORDER BY
+		elcn_personid
+		, elcn_name 
+		, COALESCE(ib.elcn_ClassYear, ib.elcn_EndYear, 'UNK')
+		OFFSET 0 ROWS
+	) ACTIVITIES 
+GROUP BY
+	elcn_personid,elcn_name
+ORDER BY 
+	elcn_personid,elcn_name
+; --select * from #temp_activities where elcn_personid = 'CD5DAD62-4DEB-4AC1-9DFE-933AC0234842';
+
+CREATE NONCLUSTERED INDEX INDX_TMP_ID ON #temp_activities (elcn_personid);
+
+SELECT
+	elcn_person
+	, [0] YTD
+	, [1] Year1
+	, [2] Year2
+	, [3] Year3
+	, [4] Year4
+INTO
+	#temp_giving_pivot
+FROM
+	(
+	SELECT
+		cdb.elcn_person 
+		, cdb.elcn_CampaignValue
+		, datepart(YYYY,@p_EndDate) - datepart(YYYY,cdb.elcn_ContributionDate) contrib_year
+	FROM
+		elcn_contributiondonorBase cdb
+		JOIN elcn_contribution contrib 
+			ON cdb.elcn_contribution = contrib.elcn_contributionId
+	WHERE
+		contrib.statuscode = 1
+		AND contrib.elcn_contributionType IN (344220000, 
+											  344220001, 
+											  344220004,
+											  344220005)
+		AND cdb.elcn_ContributionDate &lt;= @p_EndDate
+
+	)T PIVOT
+	(	SUM(elcn_CampaignValue)
+		FOR contrib_year
+		IN ([0], [1], [2], [3], [4])
+	)PVT;
+
+CREATE NONCLUSTERED INDEX INDX_TMP_ID ON #temp_giving_pivot (elcn_person);
+--select * from #temp_addresses where #temp_addresses.elcn_addressId = 'EDD9F47C-2DB3-40A3-A4B6-6CD7DB5F3ECE';
+--select * from #temp_addresses;
+SELECT
+	const.ContactId
+	, const.deceased_ind 
+	, const.date_of_birth 
+	, const.pidm
+	, const.id
+	, const.Primary_Name
+	, const.pref_first_name Preferred_First_Name
+	, const.Last_Name
+	, const.maiden_name
+
+	--, aab.elcn_AddressId
+	
+	, COALESCE(cife_salu.elcn_formattedname,sife_salu.elcn_formattedname) PREFERRED_FULL_W_SALUTATION
+	, COALESCE(cifl_salu.elcn_formattedname,sifl_salu.elcn_formattedname) PREFERRED_SHORT_W_SALUTATION
+	, sife_salu.elcn_formattedname SIFE
+	, sifl_salu.elcn_formattedname SIFL
+
+	, ctb.value	Primary_Constituent_Type 
+	, ctb.elcn_type AS Primary_Constituent_Desc 
+
+	, addresses.Street_Line1
+	, addresses.Street_Line2
+	, addresses.City
+	, addresses.State_Province
+	, addresses.Postal_Code
+	, addresses.County
+	, addresses.Nation
+
+	, atb.elcn_type AS Preferred_Address_Type
+	, exclusion_codes.NPH
+	, exclusion_codes.NOC
+	, exclusion_codes.NMC
+	, exclusion_codes.NEM
+	, exclusion_codes.NAM
+	, exclusion_codes.NDN
+	, exclusion_codes.NAK
+	, exclusion_codes.NTP
+
+	, const.anonymityType Anonymity_Type
+
+	, jfsg_est_cap.value JFSG_Estimated_Capacity
+	, ratings1.rating_type RATING_TYPE1
+	, ratings1.rating_score RATING_AMOUNT1
+	, ratings1.rating_value RATING1
+	, ratings1.rating_level RATING_LEVEL1
+	, ratings2.rating_type RATING_TYPE2
+	, ratings2.rating_score RATING_AMOUNT2
+	, ratings2.rating_value RATING2
+	, ratings2.rating_level RATING_LEVEL2
+
+	, const.Largest_Contribution_Amount Largest_Lifetime_Contribution
+	, CONVERT(VARCHAR,const.elcn_LastContributionDate,101) Last_Lifetime_Contibution_Date
+	, const.Lifetime_Total_Years_Giving 
+
+	, period_totals.Gift_Count Number_of_Gifts_For_Period
+
+	, giving_pivot.YTD Campaign_Value_YTD_for_Period
+	, giving_pivot.Year1 Campaign_Value_Year2
+	, giving_pivot.Year2 Campaign_Value_Year3
+	, giving_pivot.Year3 Campaign_Value_Year4
+
+	, gen_membership.elcn_name MEMBERSHIP_NAME
+	, gen_membership.status_desc MEMBERSHIP_STATUS
+	, gen_membership.elcn_membershipnumber MEMBERSHIP_NUMBER
+	, gen_membership.elcn_expiredate EXPIRATION_DATE
+
+	, won_membership.elcn_name WON_MEMBERSHIP_NAME
+	, won_membership.status_desc WON_MEMBERSHIP_STATUS
+	, won_membership.elcn_membershipnumber WON_MEMBERSHIP_NUMBER
+	, won_membership.elcn_expiredate	WON_EXPIRATION_DATE
+
+	, fan_membership.elcn_name FAN_MEMBERSHIP_NAME
+	, fan_membership.status_desc FAN_MEMBERSHIP_STATUS
+	, fan_membership.elcn_membershipnumber FAN_MEMBERSHIP_NUMBER
+	, fan_membership.elcn_expiredate FAN_EXPIRATION_DATE
+
+	, eab.elcn_name EMAIL_PREFERRED_ADDRESS
+	, email_slot.personal PERS_EMAIL
+	, email_slot.nsu NSU_EMAIL
+	, email_slot.alumni AL_EMAIL
+	, email_slot.business BUS_EMAIL
+
+	, homephone.elcn_phonenumber Home_Phome 
+	, CASE homephone.elcn_preferred
+		WHEN 1 then 'Y'
+		ELSE null
+	END Home_Phone_Preferred 
+	, cellphone.elcn_phonenumber CL_PHONE_NUMBER
+	, CASE cellphone.elcn_preferred 
+		WHEN 1 then 'Y' 
+		ELSE null
+	END Cell_Preferred 
+	, busphone.elcn_phonenumber Business_Phone
+	, CASE busphone.elcn_preferred
+		WHEN 1 then 'Y'
+		ELSE null
+	END Business_Phone_Preferred 
+
+	, lifetime_pledge.pledge_total Lifetime_Pledge_Payments 
+	, period_pledge.pledge_total Total_Pledge_Payments 
+	, const.Lifetime_Giving
+	, period_totals.Total_Giving
+	, lifetime_totals.Lifetime_Premiums
+	, period_totals.Total_Premiums 
+	, lifetime_totals.Lifetime_Fair_Market_Value
+	, period_totals.Total_Fair_Market_Value 
+
+	, prt.elcn_type	Relationship
+	, spouse_p.fullname Relation_Name
+
+	, CASE spouse_link.elcn_jointmailing 
+		WHEN 1 THEN 'Y'
+		ELSE null
+	END Joint_Mailing
+
+	, edu_1.Degree Degree1_Degree
+	, edu_1.Degree_Name AS Degree1_Degree_Desc
+	, edu_1.Major AS Degree1_Major
+	, edu_1.Degree_Year Degree1_Degree_Year
+
+	, edu_2.Degree Degree2_Degree
+	, edu_2.Degree_Name AS Degree2_Degree_Desc
+	, edu_2.Major AS Degree2_Major
+	, edu_2.Degree_Year Degree2_Degree_Year
+
+	, edu_3.Degree Degree3_Degree
+	, edu_3.Degree_Name AS Degree3_Degree_Desc
+	, edu_3.Major AS Degree3_Major
+	, edu_3.Degree_Year Degree3_Degree_Year
+
+	, job.elcn_OrganizationIdName EMPLOYER
+	, job.elcn_JobTitle POSITION
+	, job.elcn_BusinessRelationshipStatusIdName EMP_STATUS
+	, activities.alist ACTIVITIES
+
+FROM
+	#temp_const CONST
+	LEFT JOIN #temp_contributions period_totals 
+		ON const.ContactId = period_totals.elcn_person
+
+	LEFT JOIN(
+		SELECT 
+			aab.*
+			,ROW_NUMBER() OVER (PARTITION BY elcn_personID 
+								ORDER BY CASE WHEN sb.elcn_name = 'Current' THEN 1 ELSE 2 END, 
+									aab.elcn_preferred DESC, 
+									COALESCE(aab.elcn_enddate,'12/31/2999') DESC) RN
+		FROM 
+			elcn_addressassociationBase AAB
+			JOIN elcn_statusbase SB
+				ON aab.elcn_AddressStatusId = elcn_statusid
+		) AAB 
+		ON const.ContactId = aab.elcn_personId
+		AND aab.rn = 1
+	
+	JOIN #temp_addresses ADDRESSES -- state filtered
+		ON aab.elcn_AddressId = addresses.elcn_addressId  
+	LEFT JOIN elcn_addresstypeBase ATB 
+		ON  aab.elcn_AddressTypeId = atb.elcn_addresstypeId
+
+	LEFT JOIN #temp_exclusion_codes exclusion_codes
+		ON const.ContactId = exclusion_codes.elcn_personid
+
+	LEFT JOIN(
+		SELECT
+			elcn_personid
+			, elcn_formattedname
+		FROM
+			#temp_aprsalu salu
+		WHERE
+			salu.salu_code = 'CIFE'
+			AND salu.rn = 1
+		) CIFE_SALU 
+			ON const.contactid = cife_salu.elcn_personid
+	LEFT JOIN(
+		SELECT
+			elcn_personid
+			, elcn_formattedname
+		FROM
+			#temp_aprsalu salu
+		WHERE
+			salu.salu_code = 'SIFE'
+			AND salu.rn = 1
+		) SIFE_SALU 
+			ON const.contactid = sife_salu.elcn_personid
+	LEFT JOIN(
+		SELECT 
+			elcn_personid
+			, elcn_formattedname
+		FROM
+			#temp_aprsalu salu
+		WHERE
+			salu.salu_code = 'CIFL'
+			AND salu.rn = 1
+		) CIFL_SALU 
+			ON const.contactid = cifl_salu.elcn_personid
+	LEFT JOIN(
+		SELECT 
+			elcn_personid
+			, elcn_formattedname
+		FROM
+			#temp_aprsalu salu
+		WHERE
+			salu.salu_code = 'SIFL'
+			AND salu.rn = 1
+		) SIFL_SALU 
+			ON const.contactid = sifl_salu.elcn_personid
+
+	LEFT JOIN elcn_constituentaffiliationBase cab 
+		ON const.elcn_primaryconstituentaffiliationid = cab.elcn_constituentaffiliationId 
+	LEFT JOIN(
+		SELECT 
+			elcn_constituenttypeBase.*,
+			filteredstringmap.value  
+		FROM
+			elcn_constituenttypeBase
+			JOIN filteredstringmap
+				ON elcn_constituenttypeBase.elcn_category = filteredstringmap.attributevalue 
+
+				AND FilteredViewName = 'Filteredelcn_constituenttype'
+				AND attributeName = 'elcn_category'
+
+		) CTB ON cab.elcn_ConstituentTypeId = ctb.elcn_constituenttypeID  
+
+	LEFT JOIN(
+		SELECT
+			tr.elcn_personid
+			, tr.Value 
+		FROM
+			#temp_ratings TR
+		WHERE
+			elcn_ratingtypeid =  '88C5BD4A-BF21-4635-B8BB-EBE956F2E5BD' 
+	) JFSG_EST_CAP ON const.ContactId = jfsg_est_cap.elcn_personid  
+
+	LEFT JOIN(
+		SELECT
+			tr.elcn_personid 
+			, 'JF Smith Group Top 500' RATING_TYPE
+			, tr.value RATING_VALUE
+			, tr.level RATING_LEVEL
+			, tr.score RATING_SCORE
+		FROM
+			#temp_ratings TR
+		WHERE	
+			elcn_ratingtypeid = '1BB294D5-53D7-4815-8963-096802773E6D'			 		
+		)RATINGS1 ON const.contactid = ratings1.elcn_personid  
+
+	LEFT JOIN(
+		SELECT
+			tr.elcn_personid
+			, 'iWave Pro Score' RATING_TYPE
+			, tr.value RATING_VALUE
+			, tr.level RATING_LEVEL
+			, tr.score RATING_SCORE
+		FROM
+			#temp_ratings TR
+		WHERE	
+			elcn_ratingtypeid = '3DE9ACBB-37E5-45AF-8902-2314FC2A9538'
+		)RATINGS2 ON const.contactid = ratings2.elcn_personid  
+
+	LEFT JOIN #temp_giving_pivot giving_pivot
+		ON const.ContactId = giving_pivot.elcn_person
+
+	LEFT JOIN(
+		SELECT
+			elcn_PrimaryMemberPersonId
+			, elcn_name
+			, status_desc
+			, elcn_membershipnumber
+			, elcn_expiredate
+		FROM
+			#temp_membership
+		WHERE
+			(	elcn_name not like 'FAN%'
+				AND elcn_name not like 'WON%'
+			) AND rn = 1
+	) GEN_MEMBERSHIP ON const.contactid = gen_membership.elcn_PrimaryMemberPersonId
+
+	LEFT JOIN(
+		SELECT
+			elcn_PrimaryMemberPersonId
+			, elcn_name
+			, status_desc
+			, elcn_membershipnumber
+			, elcn_expiredate
+		FROM
+			#temp_membership
+		WHERE
+			elcn_name like 'FAN%'
+			AND rn = 1
+	) FAN_MEMBERSHIP ON const.contactid = fan_membership.elcn_PrimaryMemberPersonId
+
+	LEFT JOIN(
+		SELECT
+			elcn_PrimaryMemberPersonId
+			, elcn_name
+			, status_desc
+			, elcn_membershipnumber
+			, elcn_expiredate
+		FROM
+			#temp_membership
+		WHERE
+			elcn_name like 'WON%'
+			AND rn = 1
+	) WON_MEMBERSHIP ON const.contactid = won_membership.elcn_PrimaryMemberPersonId
+
+	LEFT JOIN elcn_emailaddressbase eab
+		ON  const.contactid = eab.elcn_personid 
+		AND eab.elcn_preferred = 1
+
+	LEFT JOIN #temp_email_slot email_slot
+		ON const.contactid = email_slot.elcn_personid
+
+	LEFT JOIN(
+		SELECT
+			elcn_personid, 
+			elcn_phonenumber, 
+			elcn_type , 
+			elcn_preferred 
+		FROM
+			#temp_phone
+		WHERE
+			elcn_type = 'Home'
+		)HOMEPHONE ON const.contactid = homephone.elcn_personid
+
+	LEFT JOIN(
+		SELECT
+			elcn_personid,
+			elcn_phonenumber, 
+			elcn_type ,
+			elcn_preferred 
+		FROM
+			#temp_phone
+		WHERE
+			elcn_type = 'Cell'
+		)CELLPHONE ON const.contactid = cellphone.elcn_personid
+
+	LEFT JOIN(
+		SELECT
+			elcn_personid, 
+			elcn_phonenumber,
+			elcn_type , 
+			elcn_preferred 
+		FROM
+			#temp_phone
+		WHERE
+			elcn_type = 'Business'
+		)BUSPHONE ON const.contactid = busphone.elcn_personid
+
+	LEFT JOIN(
+		SELECT
+		    elcn_person 
+			, SUM(elcn_contributionBase.elcn_Amount) pledge_total
+		FROM
+			elcn_contribution 
+			JOIN elcn_contributiondonorBase 
+				ON elcn_contribution.elcn_contributionId = elcn_contributiondonorBase.elcn_contribution
+			JOIN elcn_contributionBase 
+				ON elcn_contribution.elcn_PaymentforContribution = elcn_contributionBase.elcn_contributionId
+		WHERE
+			elcn_contributionBase.statuscode = 1
+			AND elcn_contribution.elcn_contributionType = 344220003 
+			AND elcn_contributiondonorBase.elcn_AssociationTypeId = '36FA0E30-6248-E411-941F-0050568068B8'
+		GROUP BY elcn_person 
+	) Lifetime_Pledge ON const.ContactId = Lifetime_Pledge.elcn_person
+	
+	LEFT JOIN(
+		SELECT
+			elcn_person
+			, SUM(elcn_contributionBase.elcn_Amount) pledge_total
+		FROM
+			elcn_contribution 
+			JOIN elcn_contributiondonorBase 
+				ON elcn_contribution.elcn_contributionId = elcn_contributiondonorBase.elcn_contribution
+			JOIN elcn_contributionBase 
+				ON elcn_contribution.elcn_PaymentforContribution = elcn_contributionBase.elcn_contributionId
+		WHERE
+			elcn_contributionBase.statuscode = 1
+			AND elcn_contribution.elcn_contributionType = 344220003 
+			AND elcn_contributiondonorBase.elcn_ContributionDate BETWEEN @p_StartDate AND @p_EndDate
+			AND elcn_contributiondonorBase.elcn_AssociationTypeId = '36FA0E30-6248-E411-941F-0050568068B8' 
+		GROUP BY elcn_person 
+	) period_pledge ON const.ContactId = period_pledge.elcn_person
+
+
+	LEFT JOIN(
+		SELECT DISTINCT 
+			elcn_person
+			, SUM(elcn_contribution.elcn_TotalPremiumFairMarketValue)  Lifetime_Premiums
+			, SUM(elcn_contribution.elcn_marketValue)  Lifetime_Fair_Market_Value
+		FROM
+			elcn_contributiondonorBase
+			JOIN elcn_contribution  
+				ON elcn_contributiondonorBase.elcn_contribution = elcn_contribution.elcn_contributionId
+		WHERE
+		
+			elcn_contribution.statuscode = 1
+			AND elcn_contribution.elcn_contributionType IN (344220000, 
+															344220001, 
+															344220004, 
+															344220005)
+		GROUP BY 
+			elcn_person 
+		)lifetime_totals ON const.ContactID = lifetime_totals.elcn_person
+
+	LEFT JOIN elcn_personalrelationshipBase SPOUSE_LINK 
+		ON const.ContactId = spouse_link.elcn_Person1Id
+			AND spouse_link.elcn_RelationshipType1ID IN ( '42295D4F-A6EE-E411-942F-005056804B43', 
+														'4F665855-A3B8-E911-80D8-0A253F89019C',
+														'62295D4F-A6EE-E411-942F-005056804B43',
+														'43665855-A3B8-E911-80D8-0A253F89019C')	
+			AND spouse_link.elcn_EndDate is null
+			AND spouse_link.statuscode = 1
+	LEFT JOIN elcn_personalrelationshiptype prt 
+		ON spouse_link.elcn_RelationshipType1Id  = prt.elcn_personalrelationshiptypeid 
+	LEFT JOIN ContactBase spouse_p 
+		ON spouse_link.elcn_Person2Id = spouse_p.ContactId
+
+	LEFT JOIN #temp_education edu_1 
+		ON edu_1.elcn_PersonId = const.ContactID 
+		AND edu_1.rank_no = 1
+	LEFT JOIN #temp_education edu_2 
+		ON edu_2.elcn_PersonId = const.ContactID 
+		AND edu_2.rank_no = 2
+	LEFT JOIN #temp_education edu_3 
+		ON edu_3.elcn_PersonId = const.ContactID 
+		AND edu_3.rank_no = 3
+
+	LEFT JOIN(
+		SELECT
+			elcn_personid,
+			elcn_JobTitle, 
+			elcn_OrganizationIdName,
+			elcn_BusinessRelationshipStatusIdName
+		FROM 
+			elcn_businessrelationship
+		WHERE
+			elcn_PrimaryEmployer = 1
+			AND statuscode =1
+	)JOB ON const.contactid = job.elcn_personid 
+	
+	LEFT JOIN(
+		SELECT
+			elcn_personid
+			, STRING_AGG(acts.elcn_name + ' (' + acts.ayears + ')', '; ') ALIST
+		FROM
+			#temp_activities ACTS
+		GROUP BY
+			elcn_personid 
+	)ACTIVITIES ON const.contactid = activities.elcn_personid
+		
+WHERE		
+		EXISTS(
+			SELECT
+				ib.elcn_name 
+			FROM
+				--elcn_involvementBase IB
+				#temp_activities ib
+			WHERE
+				ib.elcn_personid = const.contactid
+				AND ib.elcn_name in (@p_activities)						
+			UNION
+			SELECT
+				1 x
+			WHERE 
+				@p_ignore_activities = 'Y'	
+			)
+	AND (
+		EXISTS(
+			SELECT 
+				edu.Degree_Year
+			FROM
+				#temp_education edu
+			WHERE
+				edu.elcn_PersonId = const.contactid
+				AND edu.Degree_Year in (@p_academic_years)
+			UNION
+			SELECT
+				1 x
+			WHERE
+				@p_ignore_academic_years = 'Y'
+		)
+	)
+	AND (period_totals.Gift_Count &gt; 0
+		OR @p_exclude_nongivers = 'N')
+
+--and const.Primary_Name like '%Mutzig%'
+--and id in ('N00149607','N00148562','N00005419')
+--and const.ContactId IN (
+--						'FD946ABB-69CB-4387-B22D-BABF07B56A44' -- Aimme Lynn Poynter
+--						,'CD5DAD62-4DEB-4AC1-9DFE-933AC0234842' -- Abby Lee Parsons
+--						,'29EA02BF-06E0-4E43-B700-1BC62B14D105'  -- Gentrie L Griffin
+--						,'0fbed6e5-0033-4371-b0bc-345394d13ee1' -- April Murelio
+--						)
+;</CommandText><Timeout>300</Timeout><rd:UseGenericDesigner>true</rd:UseGenericDesigner></Query><Fields><Field Name="ContactId"><DataField>ContactId</DataField><rd:TypeName>System.Guid</rd:TypeName></Field><Field Name="deceased_ind"><DataField>deceased_ind</DataField><rd:TypeName>System.String</rd:TypeName></Field><Field Name="date_of_birth"><DataField>date_of_birth</DataField><rd:TypeName>System.String</rd:TypeName></Field><Field Name="pidm"><DataField>pidm</DataField><rd:TypeName>System.String</rd:TypeName></Field><Field Name="id"><DataField>id</DataField><rd:TypeName>System.String</rd:TypeName></Field><Field Name="Primary_Name"><DataField>Primary_Name</DataField><rd:TypeName>System.String</rd:TypeName></Field><Field Name="Preferred_First_Name"><DataField>Preferred_First_Name</DataField><rd:TypeName>System.String</rd:TypeName></Field><Field Name="Last_Name"><DataField>Last_Name</DataField><rd:TypeName>System.String</rd:TypeName></Field><Field Name="maiden_name"><DataField>maiden_name</DataField><rd:TypeName>System.String</rd:TypeName></Field><Field Name="MEMBERSHIP_NAME"><DataField>MEMBERSHIP_NAME</DataField><rd:TypeName>System.String</rd:TypeName></Field><Field Name="PREFERRED_FULL_W_SALUTATION"><DataField>PREFERRED_FULL_W_SALUTATION</DataField><rd:TypeName>System.String</rd:TypeName></Field><Field Name="PREFERRED_SHORT_W_SALUTATION"><DataField>PREFERRED_SHORT_W_SALUTATION</DataField><rd:TypeName>System.String</rd:TypeName></Field><Field Name="MEMBERSHIP_STATUS"><DataField>MEMBERSHIP_STATUS</DataField><rd:TypeName>System.String</rd:TypeName></Field><Field Name="SIFE"><DataField>SIFE</DataField><rd:TypeName>System.String</rd:TypeName></Field><Field Name="MEMBERSHIP_NUMBER"><DataField>MEMBERSHIP_NUMBER</DataField><rd:TypeName>System.String</rd:TypeName></Field><Field Name="SIFL"><DataField>SIFL</DataField><rd:TypeName>System.String</rd:TypeName></Field><Field Name="EXPIRATION_DATE"><DataField>EXPIRATION_DATE</DataField><rd:TypeName>System.String</rd:TypeName></Field><Field Name="Primary_Constituent_Type"><DataField>Primary_Constituent_Type</DataField><rd:TypeName>System.String</rd:TypeName></Field><Field Name="WON_MEMBERSHIP_NAME"><DataField>WON_MEMBERSHIP_NAME</DataField><rd:TypeName>System.String</rd:TypeName></Field><Field Name="WON_MEMBERSHIP_STATUS"><DataField>WON_MEMBERSHIP_STATUS</DataField><rd:TypeName>System.String</rd:TypeName></Field><Field Name="Primary_Constituent_Desc"><DataField>Primary_Constituent_Desc</DataField><rd:TypeName>System.String</rd:TypeName></Field><Field Name="WON_MEMBERSHIP_NUMBER"><DataField>WON_MEMBERSHIP_NUMBER</DataField><rd:TypeName>System.String</rd:TypeName></Field><Field Name="Street_Line1"><DataField>Street_Line1</DataField><rd:TypeName>System.String</rd:TypeName></Field><Field Name="WON_EXPIRATION_DATE"><DataField>WON_EXPIRATION_DATE</DataField><rd:TypeName>System.String</rd:TypeName></Field><Field Name="Street_Line2"><DataField>Street_Line2</DataField><rd:TypeName>System.String</rd:TypeName></Field><Field Name="FAN_MEMBERSHIP_NAME"><DataField>FAN_MEMBERSHIP_NAME</DataField><rd:TypeName>System.String</rd:TypeName></Field><Field Name="City"><DataField>City</DataField><rd:TypeName>System.String</rd:TypeName></Field><Field Name="FAN_MEMBERSHIP_STATUS"><DataField>FAN_MEMBERSHIP_STATUS</DataField><rd:TypeName>System.String</rd:TypeName></Field><Field Name="State_Province"><DataField>State_Province</DataField><rd:TypeName>System.String</rd:TypeName></Field><Field Name="FAN_MEMBERSHIP_NUMBER"><DataField>FAN_MEMBERSHIP_NUMBER</DataField><rd:TypeName>System.String</rd:TypeName></Field><Field Name="Postal_Code"><DataField>Postal_Code</DataField><rd:TypeName>System.String</rd:TypeName></Field><Field Name="FAN_EXPIRATION_DATE"><DataField>FAN_EXPIRATION_DATE</DataField><rd:TypeName>System.String</rd:TypeName></Field><Field Name="County"><DataField>County</DataField><rd:TypeName>System.String</rd:TypeName></Field><Field Name="Nation"><DataField>Nation</DataField><rd:TypeName>System.String</rd:TypeName></Field><Field Name="Preferred_Address_Type"><DataField>Preferred_Address_Type</DataField><rd:TypeName>System.String</rd:TypeName></Field><Field Name="NPH"><DataField>NPH</DataField><rd:TypeName>System.String</rd:TypeName></Field><Field Name="NOC"><DataField>NOC</DataField><rd:TypeName>System.String</rd:TypeName></Field><Field Name="NMC"><DataField>NMC</DataField><rd:TypeName>System.String</rd:TypeName></Field><Field Name="NEM"><DataField>NEM</DataField><rd:TypeName>System.String</rd:TypeName></Field><Field Name="NAM"><DataField>NAM</DataField><rd:TypeName>System.String</rd:TypeName></Field><Field Name="NDN"><DataField>NDN</DataField><rd:TypeName>System.String</rd:TypeName></Field><Field Name="NAK"><DataField>NAK</DataField><rd:TypeName>System.String</rd:TypeName></Field><Field Name="NTP"><DataField>NTP</DataField><rd:TypeName>System.String</rd:TypeName></Field><Field Name="Anonymity_Type"><DataField>Anonymity_Type</DataField><rd:TypeName>System.String</rd:TypeName></Field><Field Name="JFSG_Estimated_Capacity"><DataField>JFSG_Estimated_Capacity</DataField><rd:TypeName>System.String</rd:TypeName></Field><Field Name="RATING_TYPE1"><DataField>RATING_TYPE1</DataField><rd:TypeName>System.String</rd:TypeName></Field><Field Name="RATING_AMOUNT1"><DataField>RATING_AMOUNT1</DataField><rd:TypeName>System.String</rd:TypeName></Field><Field Name="RATING1"><DataField>RATING1</DataField><rd:TypeName>System.String</rd:TypeName></Field><Field Name="RATING_LEVEL1"><DataField>RATING_LEVEL1</DataField><rd:TypeName>System.String</rd:TypeName></Field><Field Name="RATING_TYPE2"><DataField>RATING_TYPE2</DataField><rd:TypeName>System.String</rd:TypeName></Field><Field Name="RATING_AMOUNT2"><DataField>RATING_AMOUNT2</DataField><rd:TypeName>System.String</rd:TypeName></Field><Field Name="RATING2"><DataField>RATING2</DataField><rd:TypeName>System.String</rd:TypeName></Field><Field Name="RATING_LEVEL2"><DataField>RATING_LEVEL2</DataField><rd:TypeName>System.String</rd:TypeName></Field><Field Name="Largest_Lifetime_Contribution"><DataField>Largest_Lifetime_Contribution</DataField><rd:TypeName>System.Decimal</rd:TypeName></Field><Field Name="Last_Lifetime_Contibution_Date"><DataField>Last_Lifetime_Contibution_Date</DataField><rd:TypeName>System.String</rd:TypeName></Field><Field Name="Lifetime_Total_Years_Giving"><DataField>Lifetime_Total_Years_Giving</DataField><rd:TypeName>System.Int32</rd:TypeName></Field><Field Name="Number_of_Gifts_For_Period"><DataField>Number_of_Gifts_For_Period</DataField><rd:TypeName>System.Int32</rd:TypeName></Field><Field Name="Campaign_Value_YTD_for_Period"><DataField>Campaign_Value_YTD_for_Period</DataField><rd:TypeName>System.Decimal</rd:TypeName></Field><Field Name="Campaign_Value_Year2"><DataField>Campaign_Value_Year2</DataField><rd:TypeName>System.Decimal</rd:TypeName></Field><Field Name="Campaign_Value_Year3"><DataField>Campaign_Value_Year3</DataField><rd:TypeName>System.Decimal</rd:TypeName></Field><Field Name="Campaign_Value_Year4"><DataField>Campaign_Value_Year4</DataField><rd:TypeName>System.Decimal</rd:TypeName></Field><Field Name="EMAIL_PREFERRED_ADDRESS"><DataField>EMAIL_PREFERRED_ADDRESS</DataField><rd:TypeName>System.String</rd:TypeName></Field><Field Name="PERS_EMAIL"><DataField>PERS_EMAIL</DataField><rd:TypeName>System.String</rd:TypeName></Field><Field Name="NSU_EMAIL"><DataField>NSU_EMAIL</DataField><rd:TypeName>System.String</rd:TypeName></Field><Field Name="AL_EMAIL"><DataField>AL_EMAIL</DataField><rd:TypeName>System.String</rd:TypeName></Field><Field Name="BUS_EMAIL"><DataField>BUS_EMAIL</DataField><rd:TypeName>System.String</rd:TypeName></Field><Field Name="Home_Phome"><DataField>Home_Phome</DataField><rd:TypeName>System.String</rd:TypeName></Field><Field Name="Home_Phone_Preferred"><DataField>Home_Phone_Preferred</DataField><rd:TypeName>System.String</rd:TypeName></Field><Field Name="CL_PHONE_NUMBER"><DataField>CL_PHONE_NUMBER</DataField><rd:TypeName>System.String</rd:TypeName></Field><Field Name="Cell_Preferred"><DataField>Cell_Preferred</DataField><rd:TypeName>System.String</rd:TypeName></Field><Field Name="Business_Phone"><DataField>Business_Phone</DataField><rd:TypeName>System.String</rd:TypeName></Field><Field Name="Business_Phone_Preferred"><DataField>Business_Phone_Preferred</DataField><rd:TypeName>System.String</rd:TypeName></Field><Field Name="Lifetime_Pledge_Payments"><DataField>Lifetime_Pledge_Payments</DataField><rd:TypeName>System.Decimal</rd:TypeName></Field><Field Name="Total_Pledge_Payments"><DataField>Total_Pledge_Payments</DataField><rd:TypeName>System.Decimal</rd:TypeName></Field><Field Name="Lifetime_Giving"><DataField>Lifetime_Giving</DataField><rd:TypeName>System.Decimal</rd:TypeName></Field><Field Name="Total_Giving"><DataField>Total_Giving</DataField><rd:TypeName>System.Decimal</rd:TypeName></Field><Field Name="Lifetime_Premiums"><DataField>Lifetime_Premiums</DataField><rd:TypeName>System.Decimal</rd:TypeName></Field><Field Name="Total_Premiums"><DataField>Total_Premiums</DataField><rd:TypeName>System.Decimal</rd:TypeName></Field><Field Name="Lifetime_Fair_Market_Value"><DataField>Lifetime_Fair_Market_Value</DataField><rd:TypeName>System.Decimal</rd:TypeName></Field><Field Name="Total_Fair_Market_Value"><DataField>Total_Fair_Market_Value</DataField><rd:TypeName>System.Decimal</rd:TypeName></Field><Field Name="Relationship"><DataField>Relationship</DataField><rd:TypeName>System.String</rd:TypeName></Field><Field Name="Relation_Name"><DataField>Relation_Name</DataField><rd:TypeName>System.String</rd:TypeName></Field><Field Name="Joint_Mailing"><DataField>Joint_Mailing</DataField><rd:TypeName>System.String</rd:TypeName></Field><Field Name="Degree1_Degree"><DataField>Degree1_Degree</DataField><rd:TypeName>System.String</rd:TypeName></Field><Field Name="Degree1_Degree_Desc"><DataField>Degree1_Degree_Desc</DataField><rd:TypeName>System.String</rd:TypeName></Field><Field Name="Degree1_Major"><DataField>Degree1_Major</DataField><rd:TypeName>System.String</rd:TypeName></Field><Field Name="Degree1_Degree_Year"><DataField>Degree1_Degree_Year</DataField><rd:TypeName>System.String</rd:TypeName></Field><Field Name="Degree2_Degree"><DataField>Degree2_Degree</DataField><rd:TypeName>System.String</rd:TypeName></Field><Field Name="Degree2_Degree_Desc"><DataField>Degree2_Degree_Desc</DataField><rd:TypeName>System.String</rd:TypeName></Field><Field Name="Degree2_Major"><DataField>Degree2_Major</DataField><rd:TypeName>System.String</rd:TypeName></Field><Field Name="Degree2_Degree_Year"><DataField>Degree2_Degree_Year</DataField><rd:TypeName>System.String</rd:TypeName></Field><Field Name="Degree3_Degree"><DataField>Degree3_Degree</DataField><rd:TypeName>System.String</rd:TypeName></Field><Field Name="Degree3_Degree_Desc"><DataField>Degree3_Degree_Desc</DataField><rd:TypeName>System.String</rd:TypeName></Field><Field Name="Degree3_Major"><DataField>Degree3_Major</DataField><rd:TypeName>System.String</rd:TypeName></Field><Field Name="Degree3_Degree_Year"><DataField>Degree3_Degree_Year</DataField><rd:TypeName>System.String</rd:TypeName></Field><Field Name="EMPLOYER"><DataField>EMPLOYER</DataField><rd:TypeName>System.String</rd:TypeName></Field><Field Name="POSITION"><DataField>POSITION</DataField><rd:TypeName>System.String</rd:TypeName></Field><Field Name="EMP_STATUS"><DataField>EMP_STATUS</DataField><rd:TypeName>System.String</rd:TypeName></Field><Field Name="ACTIVITIES"><DataField>ACTIVITIES</DataField><rd:TypeName>System.String</rd:TypeName></Field></Fields></DataSet><DataSet Name="ds_States"><Query><DataSourceName>MSCRM_DataSource</DataSourceName><CommandText>select 
+     elcn_abbreviation+'-'+elcn_name state_val
+     , elcn_stateprovinceId
+from
+      elcn_stateprovinceBase</CommandText></Query><Fields><Field Name="state_val"><DataField>state_val</DataField><rd:TypeName>System.String</rd:TypeName></Field><Field Name="elcn_stateprovinceId"><DataField>elcn_stateprovinceId</DataField><rd:TypeName>System.Guid</rd:TypeName></Field></Fields></DataSet><DataSet Name="ds_activities"><Query><DataSourceName>MSCRM_DataSource</DataSourceName><CommandText>select distinct 
+   elcn_name 
+from 
+   elcn_involvementactivityBase 
+where 
+   statuscode = 1 
+order by 1</CommandText></Query><Fields><Field Name="elcn_name"><DataField>elcn_name</DataField><rd:TypeName>System.String</rd:TypeName></Field></Fields></DataSet><DataSet Name="ds_years"><Query><DataSourceName>MSCRM_DataSource</DataSourceName><CommandText>WITH    yearlist
+      AS ( SELECT   1909 AS year
+           UNION ALL
+           SELECT   yl.year + 1 AS year
+           FROM     yearlist yl
+           WHERE    yl.year + 1 &lt;= YEAR(GETDATE())
+         )
+SELECT  year
+FROM    yearlist
+ORDER BY year DESC
+OPTION (MAXRECURSION 200);</CommandText></Query><Fields><Field Name="year"><DataField>year</DataField><rd:TypeName>System.Int32</rd:TypeName></Field></Fields></DataSet></DataSets><ReportSections><ReportSection><Body><ReportItems><Tablix Name="Tablix1"><TablixBody><TablixColumns><TablixColumn><Width>1in</Width></TablixColumn><TablixColumn><Width>1in</Width></TablixColumn><TablixColumn><Width>1in</Width></TablixColumn><TablixColumn><Width>2.40625in</Width></TablixColumn><TablixColumn><Width>1.45833in</Width></TablixColumn><TablixColumn><Width>2.05208in</Width></TablixColumn><TablixColumn><Width>2.1875in</Width></TablixColumn><TablixColumn><Width>2.07292in</Width></TablixColumn><TablixColumn><Width>1.65625in</Width></TablixColumn><TablixColumn><Width>2.26042in</Width></TablixColumn><TablixColumn><Width>2.05208in</Width></TablixColumn><TablixColumn><Width>1.82292in</Width></TablixColumn><TablixColumn><Width>2.05208in</Width></TablixColumn><TablixColumn><Width>2.41667in</Width></TablixColumn><TablixColumn><Width>2.11458in</Width></TablixColumn><TablixColumn><Width>1in</Width></TablixColumn><TablixColumn><Width>1.22917in</Width></TablixColumn><TablixColumn><Width>1in</Width></TablixColumn><TablixColumn><Width>1in</Width></TablixColumn><TablixColumn><Width>0.61458in</Width></TablixColumn><TablixColumn><Width>1.51042in</Width></TablixColumn><TablixColumn><Width>0.52083in</Width></TablixColumn><TablixColumn><Width>0.48958in</Width></TablixColumn><TablixColumn><Width>0.51042in</Width></TablixColumn><TablixColumn><Width>0.53125in</Width></TablixColumn><TablixColumn><Width>0.53125in</Width></TablixColumn><TablixColumn><Width>0.47917in</Width></TablixColumn><TablixColumn><Width>0.5in</Width></TablixColumn><TablixColumn><Width>0.48958in</Width></TablixColumn><TablixColumn><Width>1.14583in</Width></TablixColumn><TablixColumn><Width>1.64583in</Width></TablixColumn><TablixColumn><Width>1in</Width></TablixColumn><TablixColumn><Width>1.09375in</Width></TablixColumn><TablixColumn><Width>0.90625in</Width></TablixColumn><TablixColumn><Width>1in</Width></TablixColumn><TablixColumn><Width>1in</Width></TablixColumn><TablixColumn><Width>1.15625in</Width></TablixColumn><TablixColumn><Width>1in</Width></TablixColumn><TablixColumn><Width>1in</Width></TablixColumn><TablixColumn><Width>2.07292in</Width></TablixColumn><TablixColumn><Width>2.34375in</Width></TablixColumn><TablixColumn><Width>1.70833in</Width></TablixColumn><TablixColumn><Width>1.67708in</Width></TablixColumn><TablixColumn><Width>2.01042in</Width></TablixColumn><TablixColumn><Width>1.44792in</Width></TablixColumn><TablixColumn><Width>1.52083in</Width></TablixColumn><TablixColumn><Width>1.5in</Width></TablixColumn><TablixColumn><Width>5.02083in</Width></TablixColumn><TablixColumn><Width>1.66667in</Width></TablixColumn><TablixColumn><Width>1.77083in</Width></TablixColumn><TablixColumn><Width>1in</Width></TablixColumn><TablixColumn><Width>5.09375in</Width></TablixColumn><TablixColumn><Width>1.66667in</Width></TablixColumn><TablixColumn><Width>1.76042in</Width></TablixColumn><TablixColumn><Width>1.44792in</Width></TablixColumn><TablixColumn><Width>5.36458in</Width></TablixColumn><TablixColumn><Width>1.76042in</Width></TablixColumn><TablixColumn><Width>1.63542in</Width></TablixColumn><TablixColumn><Width>1.40625in</Width></TablixColumn><TablixColumn><Width>2.19792in</Width></TablixColumn><TablixColumn><Width>2.1875in</Width></TablixColumn><TablixColumn><Width>2.19792in</Width></TablixColumn><TablixColumn><Width>2.29167in</Width></TablixColumn><TablixColumn><Width>2.19792in</Width></TablixColumn><TablixColumn><Width>1in</Width></TablixColumn><TablixColumn><Width>1.45833in</Width></TablixColumn><TablixColumn><Width>1in</Width></TablixColumn><TablixColumn><Width>0.98958in</Width></TablixColumn><TablixColumn><Width>1.22917in</Width></TablixColumn><TablixColumn><Width>1.66667in</Width></TablixColumn><TablixColumn><Width>1.67708in</Width></TablixColumn><TablixColumn><Width>1.63542in</Width></TablixColumn><TablixColumn><Width>1in</Width></TablixColumn><TablixColumn><Width>1in</Width></TablixColumn><TablixColumn><Width>1.27083in</Width></TablixColumn><TablixColumn><Width>1.1875in</Width></TablixColumn><TablixColumn><Width>1.76042in</Width></TablixColumn><TablixColumn><Width>1.59375in</Width></TablixColumn><TablixColumn><Width>1.21875in</Width></TablixColumn><TablixColumn><Width>2.38542in</Width></TablixColumn><TablixColumn><Width>1in</Width></TablixColumn><TablixColumn><Width>1.82292in</Width></TablixColumn><TablixColumn><Width>2.55208in</Width></TablixColumn><TablixColumn><Width>2.35417in</Width></TablixColumn><TablixColumn><Width>1.375in</Width></TablixColumn><TablixColumn><Width>1.48958in</Width></TablixColumn><TablixColumn><Width>2.02083in</Width></TablixColumn><TablixColumn><Width>2.36458in</Width></TablixColumn><TablixColumn><Width>1.39583in</Width></TablixColumn><TablixColumn><Width>1.55208in</Width></TablixColumn><TablixColumn><Width>2.02083in</Width></TablixColumn><TablixColumn><Width>2.34375in</Width></TablixColumn><TablixColumn><Width>1.41667in</Width></TablixColumn><TablixColumn><Width>2.61458in</Width></TablixColumn><TablixColumn><Width>3.78125in</Width></TablixColumn><TablixColumn><Width>1.27083in</Width></TablixColumn><TablixColumn><Width>7.79167in</Width></TablixColumn></TablixColumns><TablixRows><TablixRow><Height>0.25in</Height><TablixCells><TablixCell><CellContents><Textbox Name="Textbox3"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>Deceased Ind</Value><Style><FontFamily>Segoe UI</FontFamily></Style></TextRun></TextRuns><Style><TextAlign>Center</TextAlign></Style></Paragraph></Paragraphs><rd:DefaultName>Textbox3</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="Textbox5"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>Date of Birth</Value><Style><FontFamily>Segoe UI</FontFamily></Style></TextRun></TextRuns><Style><TextAlign>Center</TextAlign></Style></Paragraph></Paragraphs><rd:DefaultName>Textbox5</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="Textbox9"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>Banner ID</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style /></Paragraph></Paragraphs><rd:DefaultName>Textbox9</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="Textbox11"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>Primary Name</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style /></Paragraph></Paragraphs><rd:DefaultName>Textbox11</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="Textbox14"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>Preferred First Name</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style /></Paragraph></Paragraphs><rd:DefaultName>Textbox14</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="Textbox16"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>Last Name</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style /></Paragraph></Paragraphs><rd:DefaultName>Textbox16</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="Textbox18"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>Maiden Name</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style /></Paragraph></Paragraphs><rd:DefaultName>Textbox18</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="Textbox20"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>Preferred Full  Salutation</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style /></Paragraph></Paragraphs><rd:DefaultName>Textbox20</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="Textbox22"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>Preferred Short Salutation</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style /></Paragraph></Paragraphs><rd:DefaultName>Textbox22</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="Textbox24"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>SIFE</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style /></Paragraph></Paragraphs><rd:DefaultName>Textbox24</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="Textbox26"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>SIFL</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style /></Paragraph></Paragraphs><rd:DefaultName>Textbox26</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="Textbox2"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>Primary Constituent Type</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style /></Paragraph></Paragraphs><rd:DefaultName>Textbox2</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="Textbox6"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>Primary Constituent Desc</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style /></Paragraph></Paragraphs><rd:DefaultName>Textbox6</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="Textbox10"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>Street Line1</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style /></Paragraph></Paragraphs><rd:DefaultName>Textbox10</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="Textbox13"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>Street Line2</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style /></Paragraph></Paragraphs><rd:DefaultName>Textbox13</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="Textbox17"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>City</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style /></Paragraph></Paragraphs><rd:DefaultName>Textbox17</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="Textbox21"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>State Province</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style /></Paragraph></Paragraphs><rd:DefaultName>Textbox21</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="Textbox25"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>Postal Code</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style /></Paragraph></Paragraphs><rd:DefaultName>Textbox25</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="Textbox28"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>County</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style /></Paragraph></Paragraphs><rd:DefaultName>Textbox28</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="Textbox30"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>Nation</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style /></Paragraph></Paragraphs><rd:DefaultName>Textbox30</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="Textbox32"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>Preferred Address Type</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style /></Paragraph></Paragraphs><rd:DefaultName>Textbox32</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="Textbox34"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>NPH</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style><TextAlign>Center</TextAlign></Style></Paragraph></Paragraphs><rd:DefaultName>Textbox34</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="Textbox36"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>NOC</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style><TextAlign>Center</TextAlign></Style></Paragraph></Paragraphs><rd:DefaultName>Textbox36</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="Textbox38"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>NMC</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style><TextAlign>Center</TextAlign></Style></Paragraph></Paragraphs><rd:DefaultName>Textbox38</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="Textbox40"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>NEM</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style><TextAlign>Center</TextAlign></Style></Paragraph></Paragraphs><rd:DefaultName>Textbox40</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="Textbox42"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>NAM</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style><TextAlign>Center</TextAlign></Style></Paragraph></Paragraphs><rd:DefaultName>Textbox42</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="Textbox44"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>NDN</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style><TextAlign>Center</TextAlign></Style></Paragraph></Paragraphs><rd:DefaultName>Textbox44</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="Textbox46"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>NAK</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style><TextAlign>Center</TextAlign></Style></Paragraph></Paragraphs><rd:DefaultName>Textbox46</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="Textbox48"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>NTP</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style><TextAlign>Center</TextAlign></Style></Paragraph></Paragraphs><rd:DefaultName>Textbox48</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="Textbox50"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>Anonymity Type</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style><TextAlign>Center</TextAlign></Style></Paragraph></Paragraphs><rd:DefaultName>Textbox50</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="Textbox52"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>JFSG Estimated Capacity</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style /></Paragraph></Paragraphs><rd:DefaultName>Textbox52</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="Textbox54"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>Rating1 Type</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style /></Paragraph></Paragraphs><rd:DefaultName>Textbox54</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="Textbox56"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>Rating1 Amount</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style /></Paragraph></Paragraphs><rd:DefaultName>Textbox56</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="Textbox58"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>Rating1</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style /></Paragraph></Paragraphs><rd:DefaultName>Textbox58</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="Textbox60"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>Rating1 Level</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style /></Paragraph></Paragraphs><rd:DefaultName>Textbox60</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="Textbox62"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>Rating2 Type</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style /></Paragraph></Paragraphs><rd:DefaultName>Textbox62</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="Textbox64"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>Rating2  Amount</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style /></Paragraph></Paragraphs><rd:DefaultName>Textbox64</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="Textbox66"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>Rating2</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style /></Paragraph></Paragraphs><rd:DefaultName>Textbox66</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="Textbox70"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>Rating2 Level</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style /></Paragraph></Paragraphs><rd:DefaultName>Textbox70</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="Textbox8"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>Last Lifetime Contibution Date</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style /></Paragraph></Paragraphs><rd:DefaultName>Textbox8</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="Textbox4"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>Largest Lifetime Contribution</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style /></Paragraph></Paragraphs><rd:DefaultName>Textbox4</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="Textbox15"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>Lifetime Total Years Giving</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style /></Paragraph></Paragraphs><rd:DefaultName>Textbox15</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="Textbox68"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>Number of Gifts For Period</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style /></Paragraph></Paragraphs><rd:DefaultName>Textbox68</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="Textbox76"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>Campaign Value YTD for Period</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style /></Paragraph></Paragraphs><rd:DefaultName>Textbox76</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="Textbox78"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>Campaign Value Year2</Value><Style><FontFamily>Segoe UI</FontFamily></Style></TextRun></TextRuns><Style /></Paragraph></Paragraphs><rd:DefaultName>Textbox78</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="Textbox80"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>Campaign Value</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun><TextRun><Value xml:space="preserve"> </Value><Style><FontFamily>Segoe UI</FontFamily></Style></TextRun><TextRun><Value>Year3</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style /></Paragraph></Paragraphs><rd:DefaultName>Textbox80</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="Textbox82"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>Campaign Value Year4</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style /></Paragraph></Paragraphs><rd:DefaultName>Textbox82</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="Textbox88"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>Membership Name</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style /></Paragraph></Paragraphs><rd:DefaultName>Textbox88</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="Textbox90"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>Membership Status</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style /></Paragraph></Paragraphs><rd:DefaultName>Textbox90</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="Textbox92"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>Membership Number</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style /></Paragraph></Paragraphs><rd:DefaultName>Textbox92</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="Textbox94"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>Expiration Date</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style /></Paragraph></Paragraphs><rd:DefaultName>Textbox94</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="Textbox96"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>WON Memberhsip Name</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style /></Paragraph></Paragraphs><rd:DefaultName>Textbox96</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="Textbox98"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>WON Membership Status</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style /></Paragraph></Paragraphs><rd:DefaultName>Textbox98</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="Textbox100"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>WON Membership Number</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style /></Paragraph></Paragraphs><rd:DefaultName>Textbox100</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="Textbox102"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>WON Expiration Date</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style /></Paragraph><Paragraph><TextRuns><TextRun><Value /><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style /></Paragraph></Paragraphs><rd:DefaultName>Textbox102</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="Textbox104"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>FAN Membership Name</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style /></Paragraph></Paragraphs><rd:DefaultName>Textbox104</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="Textbox106"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>FAN Membership Status</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style /></Paragraph></Paragraphs><rd:DefaultName>Textbox106</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="Textbox108"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>FAN Membership Number</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style /></Paragraph></Paragraphs><rd:DefaultName>Textbox108</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="Textbox110"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>FAN Expiration Date</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style /></Paragraph></Paragraphs><rd:DefaultName>Textbox110</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="Textbox112"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>Preferred Email</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style /></Paragraph></Paragraphs><rd:DefaultName>Textbox112</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="Textbox114"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>Personal Email</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style /></Paragraph></Paragraphs><rd:DefaultName>Textbox114</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="Textbox116"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>NSU Email</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style /></Paragraph></Paragraphs><rd:DefaultName>Textbox116</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="Textbox118"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>Alumni Email</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style /></Paragraph></Paragraphs><rd:DefaultName>Textbox118</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="Textbox120"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>Business Email</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style /></Paragraph></Paragraphs><rd:DefaultName>Textbox120</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="Textbox122"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>Home Phome</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style /></Paragraph></Paragraphs><rd:DefaultName>Textbox122</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="Textbox124"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>Home Phone Preferred</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style /></Paragraph></Paragraphs><rd:DefaultName>Textbox124</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="Textbox126"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>Cell Phone</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style /></Paragraph></Paragraphs><rd:DefaultName>Textbox126</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="Textbox128"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>Cell Preferred</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style /></Paragraph></Paragraphs><rd:DefaultName>Textbox128</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="Textbox130"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>Business Phone</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style /></Paragraph></Paragraphs><rd:DefaultName>Textbox130</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="Textbox132"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>Business Phone Preferred</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style /></Paragraph></Paragraphs><rd:DefaultName>Textbox132</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="Textbox134"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>Lifetime Pledge Payments</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style /></Paragraph></Paragraphs><rd:DefaultName>Textbox134</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="Textbox136"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>Total Pledge Payments</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style /></Paragraph></Paragraphs><rd:DefaultName>Textbox136</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="Textbox138"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>Lifetime Giving</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style /></Paragraph></Paragraphs><rd:DefaultName>Textbox138</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="Textbox140"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>Total Giving</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style /></Paragraph></Paragraphs><rd:DefaultName>Textbox140</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="Textbox142"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>Lifetime Premiums</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style /></Paragraph></Paragraphs><rd:DefaultName>Textbox142</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="Textbox144"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>Total Premiums</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style /></Paragraph></Paragraphs><rd:DefaultName>Textbox144</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="Textbox146"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>Lifetime Fair Market Value</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style /></Paragraph></Paragraphs><rd:DefaultName>Textbox146</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="Textbox148"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>Total Fair Market Value</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style /></Paragraph></Paragraphs><rd:DefaultName>Textbox148</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="Textbox150"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>Relationship</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style /></Paragraph></Paragraphs><rd:DefaultName>Textbox150</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="Textbox152"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>Relation Name</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style /></Paragraph></Paragraphs><rd:DefaultName>Textbox152</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="Textbox154"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>Joint Mailing</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style /></Paragraph></Paragraphs><rd:DefaultName>Textbox154</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="Textbox156"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>Degree1 Degree</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style /></Paragraph></Paragraphs><rd:DefaultName>Textbox156</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="Textbox158"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>Degree1 Degree Desc</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style /></Paragraph></Paragraphs><rd:DefaultName>Textbox158</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="Textbox160"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>Degree1 Major</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style /></Paragraph></Paragraphs><rd:DefaultName>Textbox160</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="Textbox162"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>Degree1 Degree Year</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style /></Paragraph></Paragraphs><rd:DefaultName>Textbox162</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="Textbox164"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>Degree2 Degree</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style /></Paragraph></Paragraphs><rd:DefaultName>Textbox164</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="Textbox166"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>Degree2 Degree Desc</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style /></Paragraph></Paragraphs><rd:DefaultName>Textbox166</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="Textbox168"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>Degree2 Major</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style /></Paragraph></Paragraphs><rd:DefaultName>Textbox168</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="Textbox170"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>Degree2 Degree Year</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style /></Paragraph></Paragraphs><rd:DefaultName>Textbox170</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="Textbox172"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>Degree3 Degree</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style /></Paragraph></Paragraphs><rd:DefaultName>Textbox172</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="Textbox174"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>Degree3 Degree Desc</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style /></Paragraph></Paragraphs><rd:DefaultName>Textbox174</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="Textbox176"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>Degree3 Major</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style /></Paragraph></Paragraphs><rd:DefaultName>Textbox176</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="Textbox178"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>Degree3 Degree Year</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style /></Paragraph></Paragraphs><rd:DefaultName>Textbox178</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="Textbox180"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>Employer</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style /></Paragraph></Paragraphs><rd:DefaultName>Textbox180</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="Textbox182"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>Position</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style /></Paragraph></Paragraphs><rd:DefaultName>Textbox182</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="Textbox184"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>Employment Status</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style /></Paragraph></Paragraphs><rd:DefaultName>Textbox184</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="Textbox186"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>Activities</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style /></Paragraph></Paragraphs><rd:DefaultName>Textbox186</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell></TablixCells></TablixRow><TablixRow><Height>0.25in</Height><TablixCells><TablixCell><CellContents><Textbox Name="deceased_ind"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>=Fields!deceased_ind.Value</Value><Style><FontFamily>Segoe UI</FontFamily></Style></TextRun></TextRuns><Style><TextAlign>Center</TextAlign></Style></Paragraph></Paragraphs><rd:DefaultName>deceased_ind</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="date_of_birth"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>=Fields!date_of_birth.Value</Value><Style><FontFamily>Segoe UI</FontFamily></Style></TextRun></TextRuns><Style><TextAlign>Center</TextAlign></Style></Paragraph></Paragraphs><rd:DefaultName>date_of_birth</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="id"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>=Fields!id.Value</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style /></Paragraph></Paragraphs><rd:DefaultName>id</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="Primary_Name"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>=Fields!Primary_Name.Value</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style /></Paragraph></Paragraphs><rd:DefaultName>Primary_Name</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="Preferred_First_Name"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>=Fields!Preferred_First_Name.Value</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style /></Paragraph></Paragraphs><rd:DefaultName>Preferred_First_Name</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="Last_Name"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>=Fields!Last_Name.Value</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style /></Paragraph></Paragraphs><rd:DefaultName>Last_Name</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="maiden_name"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>=Fields!maiden_name.Value</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style /></Paragraph></Paragraphs><rd:DefaultName>maiden_name</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="PREFERRED_FULL_W_SALUTATION"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>=Fields!PREFERRED_FULL_W_SALUTATION.Value</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style /></Paragraph></Paragraphs><rd:DefaultName>PREFERRED_FULL_W_SALUTATION</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="PREFERRED_SHORT_W_SALUTATION"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>=Fields!PREFERRED_SHORT_W_SALUTATION.Value</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style /></Paragraph></Paragraphs><rd:DefaultName>PREFERRED_SHORT_W_SALUTATION</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="SIFE"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>=Fields!SIFE.Value</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style /></Paragraph></Paragraphs><rd:DefaultName>SIFE</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="SIFL"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>=Fields!SIFL.Value</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style /></Paragraph></Paragraphs><rd:DefaultName>SIFL</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="Primary_Constituent_Type"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>=Fields!Primary_Constituent_Type.Value</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style /></Paragraph></Paragraphs><rd:DefaultName>Primary_Constituent_Type</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="Primary_Constituent_Desc"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>=Fields!Primary_Constituent_Desc.Value</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style /></Paragraph></Paragraphs><rd:DefaultName>Primary_Constituent_Desc</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="Street_Line1"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>=Fields!Street_Line1.Value</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style /></Paragraph></Paragraphs><rd:DefaultName>Street_Line1</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="Street_Line2"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>=Fields!Street_Line2.Value</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style /></Paragraph></Paragraphs><rd:DefaultName>Street_Line2</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="City"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>=Fields!City.Value</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style /></Paragraph></Paragraphs><rd:DefaultName>City</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="State_Province"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>=Fields!State_Province.Value</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style /></Paragraph></Paragraphs><rd:DefaultName>State_Province</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="Postal_Code"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>=Fields!Postal_Code.Value</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style /></Paragraph></Paragraphs><rd:DefaultName>Postal_Code</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="County"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>=Fields!County.Value</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style /></Paragraph></Paragraphs><rd:DefaultName>County</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="Nation"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>=Fields!Nation.Value</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style /></Paragraph></Paragraphs><rd:DefaultName>Nation</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="Preferred_Address_Type"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>=Fields!Preferred_Address_Type.Value</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style /></Paragraph></Paragraphs><rd:DefaultName>Preferred_Address_Type</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="NPH"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>=Fields!NPH.Value</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style><TextAlign>Center</TextAlign></Style></Paragraph></Paragraphs><rd:DefaultName>NPH</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="NOC"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>=Fields!NOC.Value</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style><TextAlign>Center</TextAlign></Style></Paragraph></Paragraphs><rd:DefaultName>NOC</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="NMC"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>=Fields!NMC.Value</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style><TextAlign>Center</TextAlign></Style></Paragraph></Paragraphs><rd:DefaultName>NMC</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="NEM"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>=Fields!NEM.Value</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style><TextAlign>Center</TextAlign></Style></Paragraph></Paragraphs><rd:DefaultName>NEM</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="NAM"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>=Fields!NAM.Value</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style><TextAlign>Center</TextAlign></Style></Paragraph></Paragraphs><rd:DefaultName>NAM</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="NDN"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>=Fields!NDN.Value</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style><TextAlign>Center</TextAlign></Style></Paragraph></Paragraphs><rd:DefaultName>NDN</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="NAK"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>=Fields!NAK.Value</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style><TextAlign>Center</TextAlign></Style></Paragraph></Paragraphs><rd:DefaultName>NAK</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="NTP"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>=Fields!NTP.Value</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style><TextAlign>Center</TextAlign></Style></Paragraph></Paragraphs><rd:DefaultName>NTP</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="Anonymity_Type"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>=Fields!Anonymity_Type.Value</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style><TextAlign>Center</TextAlign></Style></Paragraph></Paragraphs><rd:DefaultName>Anonymity_Type</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="JFSG_Estimated_Capacity"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>=Fields!JFSG_Estimated_Capacity.Value</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style><TextAlign>Center</TextAlign></Style></Paragraph></Paragraphs><rd:DefaultName>JFSG_Estimated_Capacity</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="RATING_TYPE1"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>=Fields!RATING_TYPE1.Value</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style><TextAlign>Center</TextAlign></Style></Paragraph></Paragraphs><rd:DefaultName>RATING_TYPE1</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="RATING_AMOUNT1"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>=Fields!RATING_AMOUNT1.Value</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style><TextAlign>Center</TextAlign></Style></Paragraph></Paragraphs><rd:DefaultName>RATING_AMOUNT1</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="RATING1"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>=Fields!RATING1.Value</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style><TextAlign>Center</TextAlign></Style></Paragraph></Paragraphs><rd:DefaultName>RATING1</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="RATING_LEVEL1"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>=Fields!RATING_LEVEL1.Value</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style><TextAlign>Center</TextAlign></Style></Paragraph></Paragraphs><rd:DefaultName>RATING_LEVEL1</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="RATING_TYPE2"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>=Fields!RATING_TYPE2.Value</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style><TextAlign>Center</TextAlign></Style></Paragraph></Paragraphs><rd:DefaultName>RATING_TYPE2</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="RATING_AMOUNT2"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>=Fields!RATING_AMOUNT2.Value</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style><TextAlign>Center</TextAlign></Style></Paragraph></Paragraphs><rd:DefaultName>RATING_AMOUNT2</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="RATING2"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>=Fields!RATING2.Value</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style><TextAlign>Center</TextAlign></Style></Paragraph></Paragraphs><rd:DefaultName>RATING2</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="RATING_LEVEL2"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>=Fields!RATING_LEVEL2.Value</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style><TextAlign>Center</TextAlign></Style></Paragraph></Paragraphs><rd:DefaultName>RATING_LEVEL2</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="Last_Lifetime_Contibution_Date"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>=Fields!Last_Lifetime_Contibution_Date.Value</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style><TextAlign>Center</TextAlign></Style></Paragraph></Paragraphs><rd:DefaultName>Last_Lifetime_Contibution_Date</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="Largest_Lifetime_Contribution"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>=Fields!Largest_Lifetime_Contribution.Value</Value><Style><FontFamily>Arial</FontFamily><Format>0.00;(0.00)</Format></Style></TextRun></TextRuns><Style><TextAlign>Right</TextAlign></Style></Paragraph></Paragraphs><rd:DefaultName>Largest_Lifetime_Contribution</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="Lifetime_Total_Years_Giving"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>=Fields!Lifetime_Total_Years_Giving.Value</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style><TextAlign>Center</TextAlign></Style></Paragraph></Paragraphs><rd:DefaultName>Lifetime_Total_Years_Giving</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="Number_of_Gifts_For_Period"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>=Fields!Number_of_Gifts_For_Period.Value</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style><TextAlign>Right</TextAlign></Style></Paragraph></Paragraphs><rd:DefaultName>Number_of_Gifts_For_Period</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>10pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="Campaign_Value_YTD_for_Period"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>=Fields!Campaign_Value_YTD_for_Period.Value</Value><Style><FontFamily>Arial</FontFamily><Format>0.00;(0.00)</Format></Style></TextRun></TextRuns><Style><TextAlign>Right</TextAlign></Style></Paragraph></Paragraphs><rd:DefaultName>Campaign_Value_YTD_for_Period</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="Campaign_Value_Year2"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>=Fields!Campaign_Value_Year2.Value</Value><Style><FontFamily>Arial</FontFamily><Format>0.00;(0.00)</Format></Style></TextRun></TextRuns><Style><TextAlign>Right</TextAlign></Style></Paragraph></Paragraphs><rd:DefaultName>Campaign_Value_Year2</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="Campaign_Value_Year3"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>=Fields!Campaign_Value_Year3.Value</Value><Style><FontFamily>Arial</FontFamily><Format>0.00;(0.00)</Format></Style></TextRun></TextRuns><Style><TextAlign>Right</TextAlign></Style></Paragraph></Paragraphs><rd:DefaultName>Campaign_Value_Year3</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="Campaign_Value_Year4"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>=Fields!Campaign_Value_Year4.Value</Value><Style><FontFamily>Arial</FontFamily><Format>0.00;(0.00)</Format></Style></TextRun></TextRuns><Style><TextAlign>Right</TextAlign></Style></Paragraph></Paragraphs><rd:DefaultName>Campaign_Value_Year4</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="MEMBERSHIP_NAME"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>=Fields!MEMBERSHIP_NAME.Value</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style /></Paragraph></Paragraphs><rd:DefaultName>MEMBERSHIP_NAME</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="MEMBERSHIP_STATUS"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>=Fields!MEMBERSHIP_STATUS.Value</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style /></Paragraph></Paragraphs><rd:DefaultName>MEMBERSHIP_STATUS</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="MEMBERSHIP_NUMBER"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>=Fields!MEMBERSHIP_NUMBER.Value</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style /></Paragraph></Paragraphs><rd:DefaultName>MEMBERSHIP_NUMBER</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="EXPIRATION_DATE"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>=Fields!EXPIRATION_DATE.Value</Value><Style><FontFamily>Arial</FontFamily><Format>MM/dd/yyyy</Format></Style></TextRun></TextRuns><Style /></Paragraph></Paragraphs><rd:DefaultName>EXPIRATION_DATE</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="WON_MEMBERSHIP_NAME"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>=Fields!WON_MEMBERSHIP_NAME.Value</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style /></Paragraph></Paragraphs><rd:DefaultName>WON_MEMBERSHIP_NAME</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="WON_MEMBERSHIP_STATUS"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>=Fields!WON_MEMBERSHIP_STATUS.Value</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style /></Paragraph></Paragraphs><rd:DefaultName>WON_MEMBERSHIP_STATUS</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="WON_MEMBERSHIP_NUMBER"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>=Fields!WON_MEMBERSHIP_NUMBER.Value</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style /></Paragraph></Paragraphs><rd:DefaultName>WON_MEMBERSHIP_NUMBER</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="WON_EXPIRATION_DATE"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>=Fields!WON_EXPIRATION_DATE.Value</Value><Style><FontFamily>Arial</FontFamily><Format>MM/dd/yyyy</Format></Style></TextRun></TextRuns><Style /></Paragraph></Paragraphs><rd:DefaultName>WON_EXPIRATION_DATE</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="FAN_MEMBERSHIP_NAME"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>=Fields!FAN_MEMBERSHIP_NAME.Value</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style /></Paragraph></Paragraphs><rd:DefaultName>FAN_MEMBERSHIP_NAME</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="FAN_MEMBERSHIP_STATUS"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>=Fields!FAN_MEMBERSHIP_STATUS.Value</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style /></Paragraph></Paragraphs><rd:DefaultName>FAN_MEMBERSHIP_STATUS</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="FAN_MEMBERSHIP_NUMBER"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>=Fields!FAN_MEMBERSHIP_NUMBER.Value</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style /></Paragraph></Paragraphs><rd:DefaultName>FAN_MEMBERSHIP_NUMBER</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="FAN_EXPIRATION_DATE"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>=Fields!FAN_EXPIRATION_DATE.Value</Value><Style><FontFamily>Arial</FontFamily><Format>MM/dd/yyyy</Format></Style></TextRun></TextRuns><Style /></Paragraph></Paragraphs><rd:DefaultName>FAN_EXPIRATION_DATE</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="EMAIL_PREFERRED_ADDRESS"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>=Fields!EMAIL_PREFERRED_ADDRESS.Value</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style /></Paragraph></Paragraphs><rd:DefaultName>EMAIL_PREFERRED_ADDRESS</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="PERS_EMAIL"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>=Fields!PERS_EMAIL.Value</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style /></Paragraph></Paragraphs><rd:DefaultName>PERS_EMAIL</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="NSU_EMAIL"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>=Fields!NSU_EMAIL.Value</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style /></Paragraph></Paragraphs><rd:DefaultName>NSU_EMAIL</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="AL_EMAIL"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>=Fields!AL_EMAIL.Value</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style /></Paragraph></Paragraphs><rd:DefaultName>AL_EMAIL</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="BUS_EMAIL"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>=Fields!BUS_EMAIL.Value</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style /></Paragraph></Paragraphs><rd:DefaultName>BUS_EMAIL</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="Home_Phome"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>=Fields!Home_Phome.Value</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style /></Paragraph></Paragraphs><rd:DefaultName>Home_Phome</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="Home_Phone_Preferred"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>=Fields!Home_Phone_Preferred.Value</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style /></Paragraph></Paragraphs><rd:DefaultName>Home_Phone_Preferred</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="CL_PHONE_NUMBER"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>=Fields!CL_PHONE_NUMBER.Value</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style /></Paragraph></Paragraphs><rd:DefaultName>CL_PHONE_NUMBER</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="Cell_Preferred"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>=Fields!Cell_Preferred.Value</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style /></Paragraph></Paragraphs><rd:DefaultName>Cell_Preferred</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="Business_Phone"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>=Fields!Business_Phone.Value</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style /></Paragraph></Paragraphs><rd:DefaultName>Business_Phone</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="Business_Phone_Preferred"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>=Fields!Business_Phone_Preferred.Value</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style /></Paragraph></Paragraphs><rd:DefaultName>Business_Phone_Preferred</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="Lifetime_Pledge_Payments"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>=Fields!Lifetime_Pledge_Payments.Value</Value><Style><FontFamily>Arial</FontFamily><Format>0.00;(0.00)</Format></Style></TextRun></TextRuns><Style><TextAlign>Right</TextAlign></Style></Paragraph></Paragraphs><rd:DefaultName>Lifetime_Pledge_Payments</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="Total_Pledge_Payments"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>=Fields!Total_Pledge_Payments.Value</Value><Style><FontFamily>Arial</FontFamily><Format>0.00;(0.00)</Format></Style></TextRun></TextRuns><Style><TextAlign>Right</TextAlign></Style></Paragraph></Paragraphs><rd:DefaultName>Total_Pledge_Payments</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="Lifetime_Giving"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>=Fields!Lifetime_Giving.Value</Value><Style><FontFamily>Arial</FontFamily><Format>0.00;(0.00)</Format></Style></TextRun></TextRuns><Style><TextAlign>Right</TextAlign></Style></Paragraph></Paragraphs><rd:DefaultName>Lifetime_Giving</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="Total_Giving"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>=Fields!Total_Giving.Value</Value><Style><FontFamily>Arial</FontFamily><Format>0.00;(0.00)</Format></Style></TextRun></TextRuns><Style><TextAlign>Right</TextAlign></Style></Paragraph></Paragraphs><rd:DefaultName>Total_Giving</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="Lifetime_Premiums"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>=Fields!Lifetime_Premiums.Value</Value><Style><FontFamily>Arial</FontFamily><Format>0.00;(0.00)</Format></Style></TextRun></TextRuns><Style><TextAlign>Right</TextAlign></Style></Paragraph></Paragraphs><rd:DefaultName>Lifetime_Premiums</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="Total_Premiums"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>=Fields!Total_Premiums.Value</Value><Style><FontFamily>Arial</FontFamily><Format>0.00;(0.00)</Format></Style></TextRun></TextRuns><Style><TextAlign>Right</TextAlign></Style></Paragraph></Paragraphs><rd:DefaultName>Total_Premiums</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="Lifetime_Fair_Market_Value"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>=Fields!Lifetime_Fair_Market_Value.Value</Value><Style><FontFamily>Arial</FontFamily><Format>0.00;(0.00)</Format></Style></TextRun></TextRuns><Style><TextAlign>Right</TextAlign></Style></Paragraph></Paragraphs><rd:DefaultName>Lifetime_Fair_Market_Value</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="Total_Fair_Market_Value"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>=Fields!Total_Fair_Market_Value.Value</Value><Style><FontFamily>Arial</FontFamily><Format>0.00;(0.00)</Format></Style></TextRun></TextRuns><Style><TextAlign>Right</TextAlign></Style></Paragraph></Paragraphs><rd:DefaultName>Total_Fair_Market_Value</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="Relationship"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>=Fields!Relationship.Value</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style /></Paragraph></Paragraphs><rd:DefaultName>Relationship</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="Relation_Name"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>=Fields!Relation_Name.Value</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style /></Paragraph></Paragraphs><rd:DefaultName>Relation_Name</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="Joint_Mailing"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>=Fields!Joint_Mailing.Value</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style /></Paragraph></Paragraphs><rd:DefaultName>Joint_Mailing</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="Degree1_Degree"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>=Fields!Degree1_Degree.Value</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style /></Paragraph></Paragraphs><rd:DefaultName>Degree1_Degree</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="Degree1_Degree_Desc"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>=Fields!Degree1_Degree_Desc.Value</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style /></Paragraph></Paragraphs><rd:DefaultName>Degree1_Degree_Desc</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="Degree1_Major"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>=Fields!Degree1_Major.Value</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style /></Paragraph></Paragraphs><rd:DefaultName>Degree1_Major</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="Degree1_Degree_Year"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>=Fields!Degree1_Degree_Year.Value</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style /></Paragraph></Paragraphs><rd:DefaultName>Degree1_Degree_Year</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="Degree2_Degree"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>=Fields!Degree2_Degree.Value</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style /></Paragraph></Paragraphs><rd:DefaultName>Degree2_Degree</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="Degree2_Degree_Desc"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>=Fields!Degree2_Degree_Desc.Value</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style /></Paragraph></Paragraphs><rd:DefaultName>Degree2_Degree_Desc</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="Degree2_Major"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>=Fields!Degree2_Major.Value</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style /></Paragraph></Paragraphs><rd:DefaultName>Degree2_Major</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="Degree2_Degree_Year"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>=Fields!Degree2_Degree_Year.Value</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style /></Paragraph></Paragraphs><rd:DefaultName>Degree2_Degree_Year</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="Degree3_Degree"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>=Fields!Degree3_Degree.Value</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style /></Paragraph></Paragraphs><rd:DefaultName>Degree3_Degree</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="Degree3_Degree_Desc"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>=Fields!Degree3_Degree_Desc.Value</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style /></Paragraph></Paragraphs><rd:DefaultName>Degree3_Degree_Desc</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="Degree3_Major"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>=Fields!Degree3_Major.Value</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style /></Paragraph></Paragraphs><rd:DefaultName>Degree3_Major</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="Degree3_Degree_Year"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>=Fields!Degree3_Degree_Year.Value</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style /></Paragraph></Paragraphs><rd:DefaultName>Degree3_Degree_Year</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="EMPLOYER"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>=Fields!EMPLOYER.Value</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style /></Paragraph></Paragraphs><rd:DefaultName>EMPLOYER</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="POSITION"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>=Fields!POSITION.Value</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style /></Paragraph></Paragraphs><rd:DefaultName>POSITION</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="EMP_STATUS"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>=Fields!EMP_STATUS.Value</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style /></Paragraph></Paragraphs><rd:DefaultName>EMP_STATUS</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell><TablixCell><CellContents><Textbox Name="ACTIVITIES"><CanGrow>true</CanGrow><KeepTogether>true</KeepTogether><Paragraphs><Paragraph><TextRuns><TextRun><Value>=Fields!ACTIVITIES.Value</Value><Style><FontFamily>Arial</FontFamily></Style></TextRun></TextRuns><Style /></Paragraph></Paragraphs><rd:DefaultName>ACTIVITIES</rd:DefaultName><Style><Border><Color>LightGrey</Color><Style>Solid</Style></Border><PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight><PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom></Style></Textbox></CellContents></TablixCell></TablixCells></TablixRow></TablixRows></TablixBody><TablixColumnHierarchy><TablixMembers><TablixMember /><TablixMember /><TablixMember /><TablixMember /><TablixMember /><TablixMember /><TablixMember /><TablixMember /><TablixMember /><TablixMember /><TablixMember /><TablixMember /><TablixMember /><TablixMember /><TablixMember /><TablixMember /><TablixMember /><TablixMember /><TablixMember /><TablixMember /><TablixMember /><TablixMember /><TablixMember /><TablixMember /><TablixMember /><TablixMember /><TablixMember /><TablixMember /><TablixMember /><TablixMember /><TablixMember /><TablixMember /><TablixMember /><TablixMember /><TablixMember /><TablixMember /><TablixMember /><TablixMember /><TablixMember /><TablixMember /><TablixMember /><TablixMember /><TablixMember /><TablixMember /><TablixMember /><TablixMember /><TablixMember /><TablixMember /><TablixMember /><TablixMember /><TablixMember /><TablixMember /><TablixMember /><TablixMember /><TablixMember /><TablixMember /><TablixMember /><TablixMember /><TablixMember /><TablixMember /><TablixMember /><TablixMember /><TablixMember /><TablixMember /><TablixMember /><TablixMember /><TablixMember /><TablixMember /><TablixMember /><TablixMember /><TablixMember /><TablixMember /><TablixMember /><TablixMember /><TablixMember /><TablixMember /><TablixMember /><TablixMember /><TablixMember /><TablixMember /><TablixMember /><TablixMember /><TablixMember /><TablixMember /><TablixMember /><TablixMember /><TablixMember /><TablixMember /><TablixMember /><TablixMember /><TablixMember /><TablixMember /><TablixMember /><TablixMember /><TablixMember /><TablixMember /><TablixMember /></TablixMembers></TablixColumnHierarchy><TablixRowHierarchy><TablixMembers><TablixMember><KeepWithGroup>After</KeepWithGroup></TablixMember><TablixMember><Group Name="Details" /><SortExpressions><SortExpression><Value>=Fields!Primary_Name.Value</Value></SortExpression></SortExpressions></TablixMember></TablixMembers></TablixRowHierarchy><DataSetName>ds_standardConstituent</DataSetName><Height>0.5in</Height><Width>165.09375in</Width><Style><Border><Style>None</Style></Border></Style></Tablix></ReportItems><Height>0.5in</Height><Style /></Body><Width>167.83334in</Width><Page><PageHeight>8.5in</PageHeight><PageWidth>11in</PageWidth><LeftMargin>0.5in</LeftMargin><RightMargin>0.5in</RightMargin><TopMargin>0.5in</TopMargin><BottomMargin>0.5in</BottomMargin><Style /></Page></ReportSection></ReportSections><ReportParameters><ReportParameter Name="p_StartDate"><DataType>DateTime</DataType><Prompt>Giving Total amount start date*:</Prompt><UsedInQuery>True</UsedInQuery></ReportParameter><ReportParameter Name="p_EndDate"><DataType>DateTime</DataType><Prompt>Giving Total amount end date*:</Prompt></ReportParameter><ReportParameter Name="p_stateList"><DataType>String</DataType><DefaultValue><DataSetReference><DataSetName>ds_States</DataSetName><ValueField>elcn_stateprovinceId</ValueField></DataSetReference></DefaultValue><Prompt>Select State(s)*:</Prompt><ValidValues><DataSetReference><DataSetName>ds_States</DataSetName><ValueField>elcn_stateprovinceId</ValueField><LabelField>state_val</LabelField></DataSetReference></ValidValues><MultiValue>true</MultiValue></ReportParameter><ReportParameter Name="p_county"><DataType>String</DataType><AllowBlank>true</AllowBlank><Prompt>County name begins with:</Prompt></ReportParameter><ReportParameter Name="p_ignore_activities"><DataType>String</DataType><DefaultValue><Values><Value>Y</Value></Values></DefaultValue><Prompt>Ignore Activites?</Prompt><ValidValues><ParameterValues><ParameterValue><Value>N</Value><Label>No</Label></ParameterValue><ParameterValue><Value>Y</Value><Label>Yes</Label></ParameterValue></ParameterValues></ValidValues></ReportParameter><ReportParameter Name="p_activities"><DataType>String</DataType><DefaultValue><DataSetReference><DataSetName>ds_activities</DataSetName><ValueField>elcn_name</ValueField></DataSetReference></DefaultValue><AllowBlank>true</AllowBlank><Prompt>Select Activities</Prompt><ValidValues><DataSetReference><DataSetName>ds_activities</DataSetName><ValueField>elcn_name</ValueField></DataSetReference></ValidValues><MultiValue>true</MultiValue></ReportParameter><ReportParameter Name="p_ignore_academic_years"><DataType>String</DataType><DefaultValue><Values><Value>Y</Value></Values></DefaultValue><Prompt>Ignore Academic Year?</Prompt><ValidValues><ParameterValues><ParameterValue><Value>Y</Value><Label>Yes</Label></ParameterValue><ParameterValue><Value>N</Value><Label>No</Label></ParameterValue></ParameterValues></ValidValues></ReportParameter><ReportParameter Name="p_academic_years"><DataType>String</DataType><DefaultValue><DataSetReference><DataSetName>ds_years</DataSetName><ValueField>year</ValueField></DataSetReference></DefaultValue><Prompt>Academic Year:</Prompt><ValidValues><DataSetReference><DataSetName>ds_years</DataSetName><ValueField>year</ValueField></DataSetReference></ValidValues><MultiValue>true</MultiValue></ReportParameter><ReportParameter Name="p_exclude_nongivers"><DataType>String</DataType><DefaultValue><Values><Value>Y</Value></Values></DefaultValue><Prompt>Excluded anyone who did not contribute during period?</Prompt><ValidValues><ParameterValues><ParameterValue><Value>Y</Value><Label>Yes</Label></ParameterValue><ParameterValue><Value>N</Value><Label>No</Label></ParameterValue></ParameterValues></ValidValues></ReportParameter><ReportParameter Name="p_include_deceased"><DataType>String</DataType><DefaultValue><Values><Value>Y</Value></Values></DefaultValue><Prompt>Included Deceased?</Prompt><ValidValues><ParameterValues><ParameterValue><Value>Y</Value><Label>Yes</Label></ParameterValue><ParameterValue><Value>N</Value><Label>No</Label></ParameterValue></ParameterValues></ValidValues></ReportParameter></ReportParameters><Language>en-US</Language><ConsumeContainerWhitespace>true</ConsumeContainerWhitespace><rd:ReportUnitType>Inch</rd:ReportUnitType><rd:ReportID>a0eafb23-79f5-4b17-9edc-a821e848eb69</rd:ReportID></Report>
