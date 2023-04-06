@@ -1,2 +1,3 @@
 # CRM_SSRS_backup:
-# This is a back-up copy of my MS SQL dev folder in case my hdd craters
+# Copy of SSRS reports folder
+# Developed for custom reports for an Ellucian Advance (Microsoft Dynamics 365 with fund raising front-end) implementation
